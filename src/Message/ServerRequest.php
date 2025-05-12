@@ -110,16 +110,16 @@ class ServerRequest implements ServerRequestInterface
      * @param array|object|null $parsedBody      $_POST data (initialized if omitted)
      */
     public function __construct(
-        private string            $method,
-        private UriInterface      $uri,
-        array                     $headers        = [],
-        private StreamInterface   $body,
-        private string            $protocolVersion = '1.1',
-        private array             $serverParams    = [],
-        private array             $cookieParams    = [],
-        private array             $queryParams     = [],
-        private array             $uploadedFiles   = [],
-        private array|object|null $parsedBody      = null,
+        private string              $method,
+        private UriInterface        $uri,
+        private StreamInterface     $body,
+        array                       $headers        = [],
+        private string              $protocolVersion = '1.1',
+        private array               $serverParams    = [],
+        private array               $cookieParams    = [],
+        private array               $queryParams     = [],
+        private array               $uploadedFiles   = [],
+        private array|object|null   $parsedBody     = null
     ) {
         // Normalize headers to lowercase keys with array values
         $this->headers = $this->normalizeHeaders($headers);
