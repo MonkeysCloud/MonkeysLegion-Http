@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -7,42 +6,34 @@ namespace MonkeysLegion\Http\Message;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UriInterface;
 use Psr\Http\Message\StreamInterface;
+use MonkeysLegion\Http\Message\Uri;
 
 /**
- * Trait to catch simple "getXxx()" calls and map them to properties.
- *
- * If a method call starts with "get" and a corresponding property exists,
- * it returns that property’s value. Otherwise, it throws a BadMethodCallException.
+ * Trait to catch simple “getXxx()” calls and map them to properties.
  */
 trait GetterHook
 {
     public function __call(string $name, array $args): mixed
     {
-        // Only handle methods beginning with "get"
         if (str_starts_with($name, 'get')) {
-            // Derive the property name by removing "get" and lowercasing first char
             $prop = lcfirst(substr($name, 3));
             if (property_exists($this, $prop)) {
                 return $this->$prop;
             }
         }
-
-        // If no matching getter, signal a missing method
         throw new \BadMethodCallException("Method {$name} does not exist");
     }
 }
 
 /**
- * PSR‑7 ServerRequest implementation.
- *
- * Uses immutable clones for mutators and the GetterHook for simple getters.
+ * PSR-7 ServerRequest implementation.
  */
 class ServerRequest implements ServerRequestInterface
 {
     use GetterHook;
 
     /**
-     * Create a ServerRequest populated from PHP globals.
+     * Build a ServerRequest from PHP super-globals.
      */
     public static function fromGlobals(): self
     {
@@ -54,7 +45,7 @@ class ServerRequest implements ServerRequestInterface
         $uriStr = $scheme . '://' . $host . ($_SERVER['REQUEST_URI'] ?? '/');
         $uri    = new Uri($uriStr);
 
-        // Collect headers from $_SERVER
+        // Collect headers
         $headers = [];
         foreach ($_SERVER as $key => $value) {
             if (str_starts_with($key, 'HTTP_')) {
@@ -63,19 +54,20 @@ class ServerRequest implements ServerRequestInterface
             }
         }
 
-        // Create body stream
+        // Body stream
         $body = new Stream(fopen('php://input', 'r'));
 
-        // Protocol version
+        // HTTP version
         $protocol = isset($_SERVER['SERVER_PROTOCOL'])
             ? str_replace('HTTP/', '', $_SERVER['SERVER_PROTOCOL'])
             : '1.1';
 
+        /**                  ↓ order: method, uri, body, headers … */
         return new self(
             $method,
             $uri,
-            $headers,
             $body,
+            $headers,
             $protocol,
             $_SERVER,
             $_COOKIE,
@@ -84,31 +76,15 @@ class ServerRequest implements ServerRequestInterface
             $_POST
         );
     }
-    use GetterHook;
 
-    /** @var string The request URI path or target */
+    // ---------------------------------------------------------------------
+    // Properties and constructor
+    // ---------------------------------------------------------------------
+
     private string $requestTarget;
+    private array  $headers;
+    private array  $attributes = [];
 
-    /** @var array<string,string[]> Lowercased header name → array of values */
-    private array $headers;
-
-    /** @var array<string,mixed> Custom request attributes */
-    private array $attributes = [];
-
-    /**
-     * Constructor.
-     *
-     * @param string            $method          HTTP method (GET, POST, etc.)
-     * @param UriInterface      $uri             Fully parsed URI object
-     * @param array<string,mixed> $headers         Initial headers (name → value or array)
-     * @param StreamInterface   $body            Request body stream
-     * @param string            $protocolVersion HTTP protocol version (default "1.1")
-     * @param array<string,mixed> $serverParams    $_SERVER parameters (optional)
-     * @param array<string,mixed> $cookieParams    $_COOKIE parameters (initialized if omitted)
-     * @param array<string,mixed> $queryParams     $_GET parameters (initialized if omitted)
-     * @param array<string,mixed> $uploadedFiles   $_FILES parameters (initialized if omitted)
-     * @param array|object|null $parsedBody      $_POST data (initialized if omitted)
-     */
     public function __construct(
         private string              $method,
         private UriInterface        $uri,
@@ -119,18 +95,15 @@ class ServerRequest implements ServerRequestInterface
         private array               $cookieParams    = [],
         private array               $queryParams     = [],
         private array               $uploadedFiles   = [],
-        private array|object|null   $parsedBody     = null
+        private array|object|null   $parsedBody      = null,
     ) {
-        // Normalize headers to lowercase keys with array values
         $this->headers = $this->normalizeHeaders($headers);
 
-        // Initialize superglobals if not passed in
         $this->cookieParams  = $_COOKIE  ?? $this->cookieParams;
         $this->queryParams   = $_GET     ?? $this->queryParams;
         $this->parsedBody    = $_POST    ?? $this->parsedBody;
         $this->uploadedFiles = $_FILES   ?? $this->uploadedFiles;
 
-        // The default request target is the URI path or "/"
         $this->requestTarget = $this->uri->getPath() ?: '/';
     }
 
@@ -353,18 +326,17 @@ class ServerRequest implements ServerRequestInterface
 
     // ─── Internal Helper ──────────────────────────────────────────────────────
 
+
     /**
-     * Normalize header names to lowercase keys and ensure each value is an array.
-     *
      * @param array<string,mixed> $headers
      * @return array<string,string[]>
      */
     private function normalizeHeaders(array $headers): array
     {
         $out = [];
-        foreach ($headers as $key => $vals) {
-            $lk = strtolower($key);
-            $out[$lk] = is_array($vals) ? array_values($vals) : [$vals];
+        foreach ($headers as $k => $v) {
+            $lk = strtolower($k);
+            $out[$lk] = is_array($v) ? array_values($v) : [$v];
         }
         return $out;
     }
