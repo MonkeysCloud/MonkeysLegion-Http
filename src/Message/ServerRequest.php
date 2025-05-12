@@ -41,6 +41,51 @@ class ServerRequest implements ServerRequestInterface
 {
     use GetterHook;
 
+    /**
+     * Create a ServerRequest populated from PHP globals.
+     */
+    public static function fromGlobals(): self
+    {
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+        // Build URI
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host   = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+        $uriStr = $scheme . '://' . $host . ($_SERVER['REQUEST_URI'] ?? '/');
+        $uri    = new Uri($uriStr);
+
+        // Collect headers from $_SERVER
+        $headers = [];
+        foreach ($_SERVER as $key => $value) {
+            if (str_starts_with($key, 'HTTP_')) {
+                $name = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($key, 5)))));
+                $headers[$name] = $value;
+            }
+        }
+
+        // Create body stream
+        $body = new Stream(fopen('php://input', 'r'));
+
+        // Protocol version
+        $protocol = isset($_SERVER['SERVER_PROTOCOL'])
+            ? str_replace('HTTP/', '', $_SERVER['SERVER_PROTOCOL'])
+            : '1.1';
+
+        return new self(
+            $method,
+            $uri,
+            $headers,
+            $body,
+            $protocol,
+            $_SERVER,
+            $_COOKIE,
+            $_GET,
+            $_FILES,
+            $_POST
+        );
+    }
+    use GetterHook;
+
     /** @var string The request URI path or target */
     private string $requestTarget;
 
