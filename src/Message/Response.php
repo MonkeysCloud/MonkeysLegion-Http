@@ -46,16 +46,16 @@ class Response implements ResponseInterface
     private string $reasonPhrase;
 
     /**
+     * @param StreamInterface $body Response body stream
      * @param int               $statusCode      HTTP status code (default 200)
      * @param array<string,mixed> $headers         Initial headers
-     * @param StreamInterface   $body            Response body stream
      * @param string            $protocolVersion HTTP protocol version, e.g. "1.1"
      * @param string            $reasonPhrase    Optional custom reason phrase
      */
     public function __construct(
+        private StreamInterface $body,
         private int $statusCode = 200,
         array $headers = [],
-        private StreamInterface $body,
         private string $protocolVersion = '1.1',
         string $reasonPhrase = ''
     ) {
