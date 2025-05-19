@@ -29,7 +29,7 @@ final class SimpleFileCache implements CacheInterface
         return $this->dir . DIRECTORY_SEPARATOR . $safe . '.cache';
     }
 
-    public function get($key, $default = null)
+    public function get($key, $default = null): mixed
     {
         $path = $this->filePath($key);
         if (!is_file($path)) {
