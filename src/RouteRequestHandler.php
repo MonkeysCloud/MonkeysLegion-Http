@@ -8,13 +8,17 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
+/**
+ * Tiny adaptor that lets the Router act as a PSR-15 RequestHandler.
+ */
 final class RouteRequestHandler implements RequestHandlerInterface
 {
-    public function __construct(private Router $router) {}
+    public function __construct(
+        private readonly Router $router
+    ) {}
 
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        // Router::dispatch() must return a ResponseInterface
         return $this->router->dispatch($request);
     }
 }
