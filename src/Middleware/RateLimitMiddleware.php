@@ -12,30 +12,21 @@ use Psr\SimpleCache\CacheInterface;
 use Psr\SimpleCache\InvalidArgumentException;
 
 /**
- * Sliding-window rate-limiter middleware.
+ * Sliding-window rate limiter.
  *
- * Fallback behaviour:
- * • If a PSR-16 CacheInterface is provided, counters are stored there.
- * • Otherwise (or on cache failure), falls back to per-process in-memory buckets.
+ * • Authenticated requests → bucket keyed by request attribute 'uid'.
+ * • Anonymous requests    → bucket keyed by client IP.
  *
- * Backends with atomic increment (Redis, APCu, etc.) eliminate races. Others
- * get “good enough” protection, with slight drift under concurrency.
+ * Falls back to in-process memory if PSR-16 cache is absent or fails.
  */
 final class RateLimitMiddleware implements MiddlewareInterface
 {
-    private const DEFAULT_LIMIT  = 60;   // requests…
-    private const DEFAULT_WINDOW = 60;   // …per 60 seconds
+    private const DEFAULT_LIMIT  = 200;   // req / window
+    private const DEFAULT_WINDOW = 60;    // seconds
 
-    /** @var array<string, array{int resetTs,int hits}> In-memory fallback buckets */
+    /** @var array<string, array{reset:int,hits:int}> */
     private array $local = [];
 
-    /**
-     * @param ResponseFactoryInterface $factory    PSR-17 factory to create ResponseInterface
-     * @param CacheInterface|null      $cache      PSR-16 cache (e.g. Redis). If null, uses in-process storage.
-     * @param int                      $limit      Maximum requests allowed per window.
-     * @param int                      $window     Window size in seconds.
-     * @param string                   $keyPrefix  Prefix for cache keys.
-     */
     public function __construct(
         private readonly ResponseFactoryInterface $factory,
         private readonly ?CacheInterface          $cache      = null,
@@ -44,122 +35,133 @@ final class RateLimitMiddleware implements MiddlewareInterface
         private readonly string                   $keyPrefix  = 'ratelimit:'
     ) {}
 
-    /**
-     * PSR-15 entry point. Applies rate-limiting based on client IP.
-     *
-     * @param ServerRequestInterface  $request  The incoming HTTP request.
-     * @param RequestHandlerInterface $handler  The next handler in the chain.
-     * @return ResponseInterface                 The response, possibly with rate-limit headers.
-     */
+    /* ------------------------------------------------------------------ */
+
     public function process(
-        ServerRequestInterface $request,
+        ServerRequestInterface  $request,
         RequestHandlerInterface $handler
     ): ResponseInterface {
-        $ip  = $request->getServerParams()['REMOTE_ADDR'] ?? '0.0.0.0';
-        $now = time();
 
-        // 1) Try shared PSR-16 cache
+        [$key, $storage]   = $this->resolveKey($request);
+        $now               = time();
+
+        /* -------- Try shared cache (fast-path) -------- */
         if ($this->cache !== null) {
-            $key = $this->keyPrefix . $ip;
             try {
-                $hits = $this->increment($key);
-
-                // Determine reset timestamp from TTL
-                $ttl     = $this->cache->get($key . '_ttl', null);
-                $resetTs = $ttl !== null ? $now + $ttl : $now + $this->window;
+                [$hits, $reset] = $this->cacheFlow($key, $now);
 
                 if ($hits > $this->limit) {
-                    return $this->reject($resetTs, 'shared');
+                    return $this->reject($reset, $storage);
                 }
 
-                $response = $handler->handle($request);
-                return $this->addHeaders($response, $hits, $resetTs, 'shared');
+                return $this->addHeaders($handler->handle($request), $hits, $reset, $storage);
 
             } catch (\Throwable) {
-                // On any cache error, fall through to in-memory
+                // fall back to local memory
             }
         }
 
-        // 2) In-process sliding window fallback
-        [$resetTs, $hits] = $this->local[$ip] ?? [$now + $this->window, 0];
-        if ($now >= $resetTs) {
-            // Window expired → reset
-            $resetTs = $now + $this->window;
-            $hits    = 0;
-        }
-        $hits++;
-        $this->local[$ip] = [$resetTs, $hits];
+        /* -------- In-process fallback -------- */
+        [$hits, $reset] = $this->localFlow($key, $now);
 
         if ($hits > $this->limit) {
-            return $this->reject($resetTs, 'local');
+            return $this->reject($reset, 'local');
         }
 
-        $response = $handler->handle($request);
-        return $this->addHeaders($response, $hits, $resetTs, 'local');
+        return $this->addHeaders($handler->handle($request), $hits, $reset, 'local');
     }
 
+    /* ------------------------------------------------------------------ */
+    /*  Key resolution                                                    */
+    /* ------------------------------------------------------------------ */
+
     /**
-     * Atomically increment the counter in cache if supported, otherwise fallback.
-     *
-     * @param string $key Cache key for this IP.
-     * @return int       New hit count after increment.
+     * @return array{string,string}  [cacheKey, 'uid'|'ip']
+     */
+    private function resolveKey(ServerRequestInterface $request): array
+    {
+        if ($uid = $request->getAttribute('uid')) {
+            return [$this->keyPrefix . 'uid:' . $uid, 'uid'];
+        }
+
+        $ip = $request->getServerParams()['REMOTE_ADDR'] ?? '0.0.0.0';
+        return [$this->keyPrefix . 'ip:' . $ip, 'ip'];
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Shared-cache path                                                 */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * @return array{int,int}  [hits,resetTs]
      * @throws InvalidArgumentException
      */
-    private function increment(string $key): int
+    private function cacheFlow(string $key, int $now): array
     {
+        $ttlKey = $key . ':ttl';
+
+        // If cache supports atomic increment, use it
         if (method_exists($this->cache, 'increment')) {
             /** @noinspection PhpUndefinedMethodInspection */
             $hits = $this->cache->increment($key);
-            if ($hits === 1) {
-                // First time: set initial TTL
+            if ($hits === 1) {                          // new bucket
                 $this->cache->set($key, 1, $this->window);
-                $this->cache->set($key . '_ttl', $this->window, $this->window);
+                $this->cache->set($ttlKey, $now + $this->window, $this->window);
             }
-            return $hits;
+        } else {
+            $hits = ((int) $this->cache->get($key, 0)) + 1;
+            $this->cache->set($key, $hits, $this->window);
         }
 
-        // Generic PSR-16 get/set fallback
-        $current = (int)$this->cache->get($key, 0) + 1;
-        $this->cache->set($key, $current, $this->window);
-        $this->cache->set($key . '_ttl', $this->window, $this->window);
-        return $current;
+        $reset = (int) $this->cache->get($ttlKey, $now + $this->window);
+        return [$hits, $reset];
     }
 
+    /* ------------------------------------------------------------------ */
+    /*  In-memory fallback                                                */
+    /* ------------------------------------------------------------------ */
+
     /**
-     * Build a 429 Too Many Requests response with appropriate headers.
-     *
-     * @param int    $resetTs  UNIX timestamp when window resets.
-     * @param string $storage  'shared' or 'local' to indicate storage used.
-     * @return ResponseInterface
+     * @return array{int,int}  [hits,resetTs]
      */
-    private function reject(int $resetTs, string $storage): ResponseInterface
+    private function localFlow(string $key, int $now): array
+    {
+        [$reset, $hits] = $this->local[$key] ?? [$now + $this->window, 0];
+
+        if ($now >= $reset) {                   // new window
+            $reset = $now + $this->window;
+            $hits  = 0;
+        }
+
+        $hits++;
+        $this->local[$key] = [$reset, $hits];
+
+        return [$hits, $reset];
+    }
+
+    /* ------------------------------------------------------------------ */
+    /*  Helpers                                                           */
+    /* ------------------------------------------------------------------ */
+
+    private function reject(int $reset, string $storage): ResponseInterface
     {
         $resp = $this->factory->createResponse(429, 'Too Many Requests');
         $resp->getBody()->write('Rate limit exceeded');
-        $resp = $this->addHeaders($resp, $this->limit + 1, $resetTs, $storage)
-            ->withHeader('Retry-After', (string)max(0, $resetTs - time()));
-        return $resp;
+
+        return $this->addHeaders($resp, $this->limit + 1, $reset, $storage)
+            ->withHeader('Retry-After', (string) max(0, $reset - time()));
     }
 
-    /**
-     * Inject standard rate-limit headers into a response.
-     *
-     * @param ResponseInterface $resp
-     * @param int               $hits      Number of hits so far.
-     * @param int               $resetTs   UNIX timestamp of next reset.
-     * @param string            $storage   Which storage was used.
-     * @return ResponseInterface
-     */
     private function addHeaders(
         ResponseInterface $resp,
         int               $hits,
-        int               $resetTs,
+        int               $reset,
         string            $storage
     ): ResponseInterface {
         return $resp
-            ->withHeader('X-RateLimit-Limit',     (string)$this->limit)
-            ->withHeader('X-RateLimit-Remaining', (string)max(0, $this->limit - $hits))
-            ->withHeader('X-RateLimit-Reset',     (string)$resetTs)
+            ->withHeader('X-RateLimit-Limit',     (string) $this->limit)
+            ->withHeader('X-RateLimit-Remaining', (string) max(0, $this->limit - $hits))
+            ->withHeader('X-RateLimit-Reset',     (string) $reset)
             ->withHeader('X-RateLimit-Storage',   $storage);
     }
 }
