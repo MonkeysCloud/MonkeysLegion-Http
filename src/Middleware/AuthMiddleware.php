@@ -26,10 +26,8 @@ final class AuthMiddleware implements MiddlewareInterface
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        $path = $request->getUri()->getPath();
-
         // 1) Skip authentication on public paths
-        if (in_array($path, $this->publicPaths, true)) {
+        if (PathMatcher::isMatch($request->getUri()->getPath(), $this->publicPaths)) {
             return $handler->handle($request);
         }
 
