@@ -17,13 +17,11 @@ final class ErrorHandlerMiddleware implements MiddlewareInterface
             // Let everything run—controllers, other middleware, etc.
             return $handler->handle($request);
         } catch (\Throwable $e) {
-            // You might log $e here
-
             // Return a consistent JSON error payload
-            return new JsonResponse([
-                'error' => true,
-                'message' => $e->getMessage(),
-            ], 500);
+            return new JsonResponse(
+                ['error' => true, 'message' => $e->getMessage()],
+                500
+            );
         }
     }
 }
