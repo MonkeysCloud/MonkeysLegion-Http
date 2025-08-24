@@ -7,6 +7,7 @@ namespace MonkeysLegion\Http\Error;
 class ErrorHandler
 {
     private HtmlErrorRenderer $renderer;
+    private static bool $hasRendered = false;
 
     public function __construct() {}
 
@@ -36,6 +37,11 @@ class ErrorHandler
 
     public function handleException(\Exception $e): void
     {
+        if (self::$hasRendered) {
+            return;
+        }
+        self::$hasRendered = true;
+
         // avoid duplicate responses
         if (!headers_sent()) {
             http_response_code(500);
@@ -47,6 +53,7 @@ class ErrorHandler
         }
 
         echo $this->render($e);
+        exit(1); // Stop further script execution
     }
 
     public function handleError(int $errno, string $errstr, string $errfile, int $errline): bool
