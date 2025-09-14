@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http;
@@ -48,7 +49,7 @@ final class CoreRequestHandler implements RequestHandlerInterface
             array_reverse($this->pipeline),
             static function (RequestHandlerInterface $next, MiddlewareInterface $mw): RequestHandlerInterface {
                 // anonymous RequestHandler decorating the next link
-                return new class ($mw, $next) implements RequestHandlerInterface {
+                return new class($mw, $next) implements RequestHandlerInterface {
                     public function __construct(
                         private MiddlewareInterface   $mw,
                         private RequestHandlerInterface $next
@@ -66,11 +67,13 @@ final class CoreRequestHandler implements RequestHandlerInterface
         try {
             return $dispatcher->handle($request);
         } catch (\Throwable $e) {
-            // very plain fallback error handler – replace with your own
-            $response = $this->responseFactory->createResponse(500);
-            $response->getBody()->write('Internal Server Error');
-            // You might log $e here …
-            return $response;
+            // Let the global error handler deal with it (HttpBootstrap)
+            throw $e;
+            // // very plain fallback error handler – replace with your own
+            // $response = $this->responseFactory->createResponse(500);
+            // $response->getBody()->write('Internal Server Error');
+            // // You might log $e here …
+            // return $response;
         }
     }
 }
