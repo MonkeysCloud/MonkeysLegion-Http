@@ -31,7 +31,7 @@ class ErrorHandler
     private static ?string $reservedMemory = null;
 
     public function __construct(
-        bool $debug = false
+        bool $debug = true
     ) {
         $this->renderer = new JsonErrorRenderer();
         $this->debug = $debug;
