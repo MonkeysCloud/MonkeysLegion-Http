@@ -227,7 +227,18 @@ class Response implements ResponseInterface
 
     public function view(string $data): Response
     {
+        // Clear the body before writing new data
+        $this->body = $this->createStream();
         $this->body->write($data);
         return $this;
+    }
+    
+    /**
+     * Create a new writable stream for the response body.
+     */
+    private function createStream(): StreamInterface
+    {
+        // Use php://temp for an in-memory stream
+        return new \MonkeysLegion\Http\Message\Stream(fopen('php://temp', 'r+'));
     }
 }

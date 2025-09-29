@@ -7,7 +7,7 @@ namespace MonkeysLegion\Http\Error;
 use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use Throwable;
 use ErrorException;
-use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, HtmlErrorRenderer, JsonErrorRenderer};
+use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, JsonErrorRenderer};
 
 /**
  * Robust error handler that handles all edge cases gracefully
@@ -31,7 +31,7 @@ class ErrorHandler
     private static ?string $reservedMemory = null;
 
     public function __construct(
-        bool $debug = true
+        bool $debug = false
     ) {
         $this->renderer = new JsonErrorRenderer();
         $this->debug = $debug;
