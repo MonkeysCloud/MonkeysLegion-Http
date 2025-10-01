@@ -7,7 +7,7 @@ namespace MonkeysLegion\Http\Error;
 use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use Throwable;
 use ErrorException;
-use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, HtmlErrorRenderer, JsonErrorRenderer};
+use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, JsonErrorRenderer};
 
 /**
  * Robust error handler that handles all edge cases gracefully
