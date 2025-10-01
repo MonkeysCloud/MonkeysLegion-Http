@@ -16,14 +16,10 @@ use Psr\Http\Message\ResponseInterface;
  * @param array $headers
  */
 function response(
-    mixed $data = '',
+    string $data = '',
     int $status = 200,
     array $headers = []
 ): ResponseInterface {
-    if (is_array($data) || is_object($data)) {
-        return new JsonResponse($data, $status);
-    }
-
     $body = Stream::createFromString((string)$data);
 
     return new Response($body, $status, $headers);
