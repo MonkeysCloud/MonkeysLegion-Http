@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error;
 
-use MonkeysLegion\Core\Contracts\FrameworkLoggerInterface;
 use Throwable;
 use ErrorException;
 use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, JsonErrorRenderer};
+use MonkeysLegion\Log\Contracts\MonkeysLoggerInterface;
 
 /**
  * Robust error handler that handles all edge cases gracefully
@@ -15,7 +15,7 @@ use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, JsonErrorRenderer
 class ErrorHandler
 {
     private ErrorRendererInterface $renderer;
-    private ?FrameworkLoggerInterface $logger = null;
+    private ?MonkeysLoggerInterface $logger = null;
     private bool $debug;
 
     /** @var array<string, float> Track exception handling to prevent infinite loops */
@@ -47,7 +47,7 @@ class ErrorHandler
         $this->renderer = $renderer;
     }
 
-    public function useLogger(FrameworkLoggerInterface $logger): void
+    public function useLogger(MonkeysLoggerInterface $logger): void
     {
         $this->logger = $logger;
     }
