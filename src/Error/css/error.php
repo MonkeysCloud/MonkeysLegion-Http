@@ -109,7 +109,7 @@ body {
 .error-header-content {
     position: relative;
     z-index: 2;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     display: flex;
     align-items: flex-start;
@@ -194,7 +194,7 @@ body {
 
 .error-title-container {
     flex: 1;
-    max-width: calc(100% - 120px);
+    max-width: calc(100% - 140px);
     overflow-wrap: break-word;
     word-break: break-word;
 }
@@ -238,7 +238,7 @@ body {
 .error-content {
     flex: 1;
     padding: 3rem;
-    max-width: 1200px;
+    max-width: 1500px;
     margin: 0 auto;
     width: 100%;
     overflow-y: auto;

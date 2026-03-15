@@ -1,17 +1,25 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Factory;
 
 use GuzzleHttp\Psr7\HttpFactory as GuzzleFactory;
 use Psr\Http\Message\{
-    RequestInterface, ResponseInterface, ServerRequestInterface,
-    StreamInterface, UploadedFileInterface, UriInterface
+    RequestInterface,
+    ResponseInterface,
+    ServerRequestInterface,
+    StreamInterface,
+    UploadedFileInterface,
+    UriInterface
 };
 use Psr\Http\Message\{
-    RequestFactoryInterface, ResponseFactoryInterface,
-    ServerRequestFactoryInterface, StreamFactoryInterface,
-    UploadedFileFactoryInterface, UriFactoryInterface
+    RequestFactoryInterface,
+    ResponseFactoryInterface,
+    ServerRequestFactoryInterface,
+    StreamFactoryInterface,
+    UploadedFileFactoryInterface,
+    UriFactoryInterface
 };
 
 /**
@@ -32,6 +40,18 @@ final class HttpFactory implements
      * @var GuzzleFactory
      */
     private GuzzleFactory $inner;
+
+    private static ?ServerRequestInterface $currentRequest = null;
+
+    public static function setGlobalRequest(ServerRequestInterface $request): void
+    {
+        self::$currentRequest = $request;
+    }
+
+    public static function getGlobalRequest(): ?ServerRequestInterface
+    {
+        return self::$currentRequest;
+    }
 
     /**
      * HttpFactory constructor.
