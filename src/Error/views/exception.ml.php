@@ -511,7 +511,7 @@
                     </svg>
                 </div>
                 <h2 class="error-message-title">Oops! Something went wrong</h2>
-                <p class="error-message-text">An internal server error occurred. Our team has been notified and we're working to fix the issue.</p>
+                <p class="error-message-text">An internal server error occurred.</p>
                 <div class="error-actions">
                     <button class="action-btn primary" onclick="window.location.reload()">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -526,9 +526,6 @@
                         Go Back
                     </button>
                 </div>
-                <div class="error-support">
-                    <p>If this problem persists, please <a href="mailto:support@monkeyslegion.com">contact support</a></p>
-                </div>
             </div>
             @endif
         </div>
@@ -542,7 +539,6 @@
                 <div class="footer-links">
                     <a href="https://monkeyslegion.com/docs" target="_blank">Documentation</a>
                     <a href="https://github.com/MonkeysCloud/MonkeysLegion-Skeleton" target="_blank">GitHub</a>
-                    <a href="mailto:support@monkeyslegion.com">Support</a>
                 </div>
             </div>
         </div>
