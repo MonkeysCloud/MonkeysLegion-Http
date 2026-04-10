@@ -976,8 +976,8 @@ final class HttpV2Test extends TestCase
         try {
             $response = Response::download($tmpFile, "bad\x00file\nname.txt");
             $disposition = $response->getHeaderLine('Content-Disposition');
-            // Control characters should be stripped
-            $this->assertStringContains('badfilename.txt', $disposition);
+            // Special characters should be replaced with underscores
+            $this->assertStringContains('bad_file_name.txt', $disposition);
         } finally {
             unlink($tmpFile);
         }
@@ -1177,22 +1177,13 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function content_negotiation_xml_uses_libxml_nonet(): void
     {
-        // Verify the middleware can produce XML without XXE
-        $mw = new \MonkeysLegion\Http\Middleware\ContentNegotiationMiddleware();
-
-        // Create a handler that returns a PayloadInterface
-        $payload = new class implements \MonkeysLegion\Http\Negotiation\PayloadInterface {
-            public function toPayload(): mixed
-            {
-                return ['name' => 'test', 'value' => 42];
-            }
-        };
-
-        // We can't easily test LIBXML_NONET flag directly,
-        // but we can verify XML generation works correctly
+        // Verify that SimpleXMLElement with LIBXML_NONET produces valid XML
+        // This tests the same construction used in ContentNegotiationMiddleware
         $xml = new \SimpleXMLElement('<root/>', LIBXML_NONET);
         $xml->addChild('test', 'value');
-        $this->assertStringContains('<test>value</test>', $xml->asXML());
+        $output = $xml->asXML();
+        $this->assertStringContains('<test>value</test>', $output);
+        $this->assertStringContains('<?xml', $output);
     }
 
     // ── Helpers ────────────────────────────────────────────────

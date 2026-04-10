@@ -87,14 +87,25 @@ final class ServerRequest implements ServerRequestInterface
         $body = new Stream(fopen('php://input', 'r'));
 
         // Auto-parse JSON body for any method when Content-Type is application/json
+        // Only override $_POST if it's empty (avoid discarding form data on POST)
         $parsedBody = $_POST;
-        if (isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
+        if ($parsedBody === [] && isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
             $rawBody = (string) $body;
             $decoded = json_decode($rawBody, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                 $parsedBody = $decoded;
             }
             // Rewind so downstream can re-read
+            if ($body->isSeekable()) {
+                $body->rewind();
+            }
+        } elseif ($method !== 'POST' && isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
+            // For non-POST methods (PUT, PATCH, DELETE), always parse JSON body
+            $rawBody = (string) $body;
+            $decoded = json_decode($rawBody, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $parsedBody = $decoded;
+            }
             if ($body->isSeekable()) {
                 $body->rewind();
             }

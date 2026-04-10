@@ -206,8 +206,15 @@ class Response implements ResponseInterface
         }
 
         $filename ??= basename($realPath);
-        // Sanitize filename: remove control characters and directory separators
-        $filename = preg_replace('/[\x00-\x1F\x7F\/\\\\]/', '', $filename);
+        // Sanitize filename: whitelist safe characters, limit length
+        $filename = preg_replace('/[^a-zA-Z0-9._\-]/', '_', $filename);
+        $filename = ltrim($filename, '.');
+        if (strlen($filename) > 255) {
+            $filename = substr($filename, 0, 255);
+        }
+        if ($filename === '') {
+            $filename = 'download';
+        }
 
         return new self(
             Stream::createFromFile($realPath),
