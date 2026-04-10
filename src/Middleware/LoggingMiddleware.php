@@ -38,11 +38,12 @@ final class LoggingMiddleware implements MiddlewareInterface
         $elapsed  = (hrtime(true) - $start) / 1e6;
 
         $context = [
-            'method'     => $request->getMethod(),
-            'uri'        => (string) $request->getUri(),
-            'status'     => $response->getStatusCode(),
-            'duration_ms' => round($elapsed, 2),
-            'request_id' => $request->getAttribute('request_id'),
+            'method'        => $request->getMethod(),
+            'uri'           => (string) $request->getUri(),
+            'status'        => $response->getStatusCode(),
+            'duration_ms'   => round($elapsed, 2),
+            'request_id'    => $request->getAttribute('request_id'),
+            'response_size' => $response->getBody()->getSize(),
         ];
 
         $message = sprintf(

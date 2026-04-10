@@ -86,12 +86,12 @@ final class ServerRequest implements ServerRequestInterface
 
         $body = new Stream(fopen('php://input', 'r'));
 
-        // Auto-parse JSON body
+        // Auto-parse JSON body for any method when Content-Type is application/json
         $parsedBody = $_POST;
-        if ($parsedBody === [] && isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
+        if (isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
             $rawBody = (string) $body;
             $decoded = json_decode($rawBody, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                 $parsedBody = $decoded;
             }
             // Rewind so downstream can re-read

@@ -53,13 +53,23 @@ final class ETagMiddleware implements MiddlewareInterface
             return $response;
         }
 
-        // Generate ETag from body content
-        $body = (string) $response->getBody();
-        if ($response->getBody()->isSeekable()) {
-            $response->getBody()->rewind();
+        // Generate ETag from body content using stream-based hashing
+        $body = $response->getBody();
+        $hashCtx = hash_init('xxh3');
+
+        if ($body->isSeekable()) {
+            $body->rewind();
         }
 
-        $hash = hash('xxh3', $body);
+        while (!$body->eof()) {
+            hash_update($hashCtx, $body->read(8192));
+        }
+
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
+
+        $hash = hash_final($hashCtx);
         $etag = $this->weakETag ? sprintf('W/"%s"', $hash) : sprintf('"%s"', $hash);
 
         $response = $response->withHeader('ETag', $etag);

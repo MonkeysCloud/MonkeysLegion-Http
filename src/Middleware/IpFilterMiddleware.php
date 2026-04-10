@@ -83,9 +83,15 @@ final class IpFilterMiddleware implements MiddlewareInterface
             return false;
         }
 
+        // Validate CIDR prefix length
+        $totalBits = strlen($ipBin) * 8;
+        if ($bits < 0 || $bits > $totalBits) {
+            return false;
+        }
+
         // Build mask and compare
         $byteLen = strlen($ipBin);
-        $mask    = str_repeat("\xff", (int) ($bits / 8));
+        $mask    = str_repeat("\xff", intdiv($bits, 8));
         if ($bits % 8 !== 0) {
             $mask .= chr(0xff << (8 - ($bits % 8)) & 0xff);
         }

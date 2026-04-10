@@ -191,14 +191,26 @@ class Response implements ResponseInterface
     /**
      * Create a file download response.
      *
-     * @param string      $path     File path on disk.
+     * @param string      $path     Absolute file path on disk.
      * @param string|null $filename Download filename (defaults to basename).
+     *
+     * @throws \InvalidArgumentException If the path cannot be resolved or is not a readable file.
      */
     public static function download(string $path, ?string $filename = null): self
     {
-        $filename ??= basename($path);
+        $realPath = realpath($path);
+        if ($realPath === false || !is_file($realPath) || !is_readable($realPath)) {
+            throw new \InvalidArgumentException(
+                sprintf('File path "%s" is not a valid readable file.', $path),
+            );
+        }
+
+        $filename ??= basename($realPath);
+        // Sanitize filename: remove control characters and directory separators
+        $filename = preg_replace('/[\x00-\x1F\x7F\/\\\\]/', '', $filename);
+
         return new self(
-            Stream::createFromFile($path),
+            Stream::createFromFile($realPath),
             200,
             [
                 'Content-Type'        => 'application/octet-stream',
