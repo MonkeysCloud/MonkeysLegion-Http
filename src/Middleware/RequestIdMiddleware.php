@@ -38,7 +38,7 @@ final class RequestIdMiddleware implements MiddlewareInterface
     ): ResponseInterface {
         // Accept upstream ID or generate new one
         $requestId = $request->getHeaderLine($this->headerName);
-        if ($requestId === '') {
+        if ($requestId === '' || !self::isValidRequestId($requestId)) {
             $requestId = self::uuid4();
         }
 
@@ -65,5 +65,14 @@ final class RequestIdMiddleware implements MiddlewareInterface
         $bytes[8] = chr(ord($bytes[8]) & 0x3f | 0x80);
 
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+    }
+
+    /**
+     * Validate an upstream request ID to prevent header injection.
+     * Allows alphanumeric, hyphens, underscores, dots, and colons (max 200 chars).
+     */
+    private static function isValidRequestId(string $id): bool
+    {
+        return strlen($id) <= 200 && preg_match('/^[a-zA-Z0-9\-_.:]+$/', $id) === 1;
     }
 }

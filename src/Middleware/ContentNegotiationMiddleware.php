@@ -75,7 +75,7 @@ final class ContentNegotiationMiddleware implements MiddlewareInterface
 
     private function xml(mixed $data): ResponseInterface
     {
-        $xml = new \SimpleXMLElement('<root/>');
+        $xml = new \SimpleXMLElement('<root/>', LIBXML_NONET);
         $this->arrayToXml($xml, $data);
 
         return new \MonkeysLegion\Http\Message\Response(

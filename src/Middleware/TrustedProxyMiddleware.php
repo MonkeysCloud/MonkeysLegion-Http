@@ -105,65 +105,27 @@ final class TrustedProxyMiddleware implements MiddlewareInterface
         [$subnet, $bits] = explode('/', $cidr, 2);
         $bits = (int) $bits;
 
-        $ipBin    = inet_pton($ip);
-        $subBin   = inet_pton($subnet);
+        $ipBin  = @inet_pton($ip);
+        $subBin = @inet_pton($subnet);
 
         if ($ipBin === false || $subBin === false || strlen($ipBin) !== strlen($subBin)) {
             return false;
         }
 
-        $ipLong  = $this->ipToLong($ipBin);
-        $subLong = $this->ipToLong($subBin);
+        $byteLen  = strlen($ipBin);
+        $totalBits = $byteLen * 8;
 
-        $totalBits = strlen($ipBin) * 8;
-        $mask      = $bits === 0 ? '0' : bcpow('2', (string) $totalBits);
-        $mask      = bcsub($mask, bcpow('2', (string) ($totalBits - $bits)));
-
-        return bccomp(
-            bcmod(bcadd($ipLong, '0'), bcpow('2', (string) $totalBits)),
-            '0',
-        ) >= 0
-        && (($this->bitwiseAnd($ipLong, $mask)) === ($this->bitwiseAnd($subLong, $mask)));
-    }
-
-    private function ipToLong(string $packed): string
-    {
-        $hex = bin2hex($packed);
-        $dec = '0';
-        for ($i = 0, $len = strlen($hex); $i < $len; $i++) {
-            $dec = bcadd(bcmul($dec, '16'), (string) hexdec($hex[$i]));
+        if ($bits < 0 || $bits > $totalBits) {
+            return false;
         }
-        return $dec;
-    }
 
-    private function bitwiseAnd(string $a, string $b): string
-    {
-        // Simple bitwise AND via string manipulation for arbitrary precision
-        $binA = $this->decToBin($a, 128);
-        $binB = $this->decToBin($b, 128);
-        $result = '';
-        for ($i = 0; $i < 128; $i++) {
-            $result .= ($binA[$i] === '1' && $binB[$i] === '1') ? '1' : '0';
+        // Build mask using packed bytes
+        $mask = str_repeat("\xff", intdiv($bits, 8));
+        if ($bits % 8 !== 0) {
+            $mask .= chr(0xff << (8 - ($bits % 8)) & 0xff);
         }
-        return $this->binToDec($result);
-    }
+        $mask = str_pad($mask, $byteLen, "\x00");
 
-    private function decToBin(string $dec, int $pad): string
-    {
-        $bin = '';
-        while (bccomp($dec, '0') > 0) {
-            $bin = bcmod($dec, '2') . $bin;
-            $dec = bcdiv($dec, '2', 0);
-        }
-        return str_pad($bin, $pad, '0', STR_PAD_LEFT);
-    }
-
-    private function binToDec(string $bin): string
-    {
-        $dec = '0';
-        for ($i = 0, $len = strlen($bin); $i < $len; $i++) {
-            $dec = bcadd(bcmul($dec, '2'), $bin[$i]);
-        }
-        return $dec;
+        return ($ipBin & $mask) === ($subBin & $mask);
     }
 }

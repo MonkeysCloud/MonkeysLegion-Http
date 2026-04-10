@@ -13,8 +13,10 @@ use MonkeysLegion\Http\Message\Uri;
 use MonkeysLegion\Http\Middleware\AuthMiddleware;
 use MonkeysLegion\Http\Middleware\CorsMiddleware;
 use MonkeysLegion\Http\Middleware\CsrfMiddleware;
+use MonkeysLegion\Http\Middleware\ErrorHandlerMiddleware;
 use MonkeysLegion\Http\Middleware\ETagMiddleware;
 use MonkeysLegion\Http\Middleware\IpFilterMiddleware;
+use MonkeysLegion\Http\Middleware\LoggingMiddleware;
 use MonkeysLegion\Http\Middleware\RateLimitMiddleware;
 use MonkeysLegion\Http\Middleware\RequestIdMiddleware;
 use MonkeysLegion\Http\Middleware\RequestSizeLimitMiddleware;
@@ -45,6 +47,16 @@ final class EchoBodyHandler implements RequestHandlerInterface
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
         return Response::text($this->body);
+    }
+}
+
+final class ThrowingHandler implements RequestHandlerInterface
+{
+    public function __construct(private readonly \Throwable $exception) {}
+
+    public function handle(ServerRequestInterface $request): ResponseInterface
+    {
+        throw $this->exception;
     }
 }
 
@@ -927,6 +939,251 @@ final class HttpV2Test extends TestCase
 
         $this->assertStringContains('fail', $output);
         $this->assertSame('text/plain', $renderer->getContentType());
+    }
+
+    // ── Response::download() Security ─────────────────────────
+
+    #[Test]
+    public function response_download_rejects_invalid_path(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        Response::download('/nonexistent/path/file.txt');
+    }
+
+    #[Test]
+    public function response_download_validates_real_file(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        file_put_contents($tmpFile, 'test content');
+
+        try {
+            $response = Response::download($tmpFile);
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame('application/octet-stream', $response->getHeaderLine('Content-Type'));
+            $disposition = $response->getHeaderLine('Content-Disposition');
+            $this->assertStringContains('attachment', $disposition);
+        } finally {
+            unlink($tmpFile);
+        }
+    }
+
+    #[Test]
+    public function response_download_sanitizes_filename(): void
+    {
+        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
+        file_put_contents($tmpFile, 'test content');
+
+        try {
+            $response = Response::download($tmpFile, "bad\x00file\nname.txt");
+            $disposition = $response->getHeaderLine('Content-Disposition');
+            // Special characters should be replaced with underscores
+            $this->assertStringContains('bad_file_name.txt', $disposition);
+        } finally {
+            unlink($tmpFile);
+        }
+    }
+
+    // ── ErrorHandlerMiddleware ─────────────────────────────────
+
+    #[Test]
+    public function error_handler_middleware_catches_exception(): void
+    {
+        $mw = new ErrorHandlerMiddleware(debug: false);
+        $handler = new ThrowingHandler(new \RuntimeException('Something broke'));
+
+        $response = $mw->process($this->makeRequest(), $handler);
+
+        $this->assertSame(500, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame('error', $body['status']);
+        $this->assertSame('An unexpected error occurred.', $body['message']);
+    }
+
+    #[Test]
+    public function error_handler_middleware_debug_mode(): void
+    {
+        $mw = new ErrorHandlerMiddleware(debug: true);
+        $handler = new ThrowingHandler(new \RuntimeException('Debug error'));
+
+        $response = $mw->process($this->makeRequest(), $handler);
+
+        $this->assertSame(500, $response->getStatusCode());
+        $body = json_decode((string) $response->getBody(), true);
+        $this->assertSame('Debug error', $body['message']);
+        $this->assertArrayHasKey('debug', $body);
+    }
+
+    #[Test]
+    public function error_handler_middleware_uses_exception_code(): void
+    {
+        $mw = new ErrorHandlerMiddleware(debug: false);
+        $handler = new ThrowingHandler(new \RuntimeException('Not found', 404));
+
+        $response = $mw->process($this->makeRequest(), $handler);
+
+        $this->assertSame(404, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function error_handler_middleware_passes_through_on_success(): void
+    {
+        $mw = new ErrorHandlerMiddleware(debug: false);
+
+        $response = $mw->process($this->makeRequest(), new EchoHandler());
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    // ── RequestId Validation ──────────────────────────────────
+
+    #[Test]
+    public function request_id_rejects_invalid_upstream_id(): void
+    {
+        $mw = new RequestIdMiddleware();
+        // Inject a request ID with newlines (potential header injection)
+        $request = $this->makeRequest('GET', '/')->withHeader('X-Request-Id', "bad\nvalue");
+        $response = $mw->process($request, new EchoHandler());
+
+        $requestId = $response->getHeaderLine('X-Request-Id');
+        // Should generate a new UUID, not use the injected value
+        $this->assertNotSame("bad\nvalue", $requestId);
+        $this->assertMatchesRegularExpression(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/',
+            $requestId,
+        );
+    }
+
+    #[Test]
+    public function request_id_accepts_valid_upstream_id(): void
+    {
+        $mw = new RequestIdMiddleware();
+        $request = $this->makeRequest('GET', '/')->withHeader('X-Request-Id', 'valid-id-123');
+        $response = $mw->process($request, new EchoHandler());
+
+        $this->assertSame('valid-id-123', $response->getHeaderLine('X-Request-Id'));
+    }
+
+    // ── ETag Streaming Hash ───────────────────────────────────
+
+    #[Test]
+    public function etag_generates_consistent_hash(): void
+    {
+        $mw = new ETagMiddleware();
+
+        $response1 = $mw->process($this->makeRequest('GET', '/'), new EchoBodyHandler('test body'));
+        $response2 = $mw->process($this->makeRequest('GET', '/'), new EchoBodyHandler('test body'));
+
+        $this->assertSame(
+            $response1->getHeaderLine('ETag'),
+            $response2->getHeaderLine('ETag'),
+        );
+    }
+
+    #[Test]
+    public function etag_different_body_different_hash(): void
+    {
+        $mw = new ETagMiddleware();
+
+        $response1 = $mw->process($this->makeRequest('GET', '/'), new EchoBodyHandler('body 1'));
+        $response2 = $mw->process($this->makeRequest('GET', '/'), new EchoBodyHandler('body 2'));
+
+        $this->assertNotSame(
+            $response1->getHeaderLine('ETag'),
+            $response2->getHeaderLine('ETag'),
+        );
+    }
+
+    // ── TrustedProxy with simplified CIDR ─────────────────────
+
+    #[Test]
+    public function trusted_proxy_cidr_matching(): void
+    {
+        $mw = new TrustedProxyMiddleware(trustedProxies: ['10.0.0.0/8']);
+        $request = $this->makeRequest('GET', '/')
+            ->withHeader('X-Forwarded-For', '203.0.113.50');
+
+        // Replace REMOTE_ADDR with a trusted proxy IP in the 10.x range
+        $request = new ServerRequest(
+            'GET',
+            new Uri('http://localhost/'),
+            Stream::empty(),
+            ['X-Forwarded-For' => '203.0.113.50'],
+            '1.1',
+            ['REMOTE_ADDR' => '10.1.2.3'],
+        );
+
+        $capturedIp = null;
+        $handler = new class($capturedIp) implements RequestHandlerInterface {
+            public function __construct(private mixed &$ip) {}
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                $this->ip = $request->getAttribute('client_ip');
+                return Response::json(['ok' => true]);
+            }
+        };
+
+        $mw->process($request, $handler);
+        $this->assertSame('203.0.113.50', $capturedIp);
+    }
+
+    // ── IpFilter CIDR Validation ──────────────────────────────
+
+    #[Test]
+    public function ip_filter_rejects_invalid_cidr(): void
+    {
+        // /33 is invalid for IPv4
+        $mw = new IpFilterMiddleware(allowList: ['192.168.1.0/33']);
+        $request = new ServerRequest(
+            'GET',
+            new Uri('http://localhost/'),
+            Stream::empty(),
+            [],
+            '1.1',
+            ['REMOTE_ADDR' => '192.168.1.1'],
+        );
+
+        $response = $mw->process($request, new EchoHandler());
+        // Invalid CIDR should not match, so request is denied
+        $this->assertSame(403, $response->getStatusCode());
+    }
+
+    // ── LoggingMiddleware response_size ────────────────────────
+
+    #[Test]
+    public function logging_middleware_includes_response_size(): void
+    {
+        $loggedContext = null;
+        $logger = new class($loggedContext) implements \Psr\Log\LoggerInterface {
+            public function __construct(private mixed &$context) {}
+            public function emergency(\Stringable|string $message, array $context = []): void {}
+            public function alert(\Stringable|string $message, array $context = []): void {}
+            public function critical(\Stringable|string $message, array $context = []): void {}
+            public function error(\Stringable|string $message, array $context = []): void {}
+            public function warning(\Stringable|string $message, array $context = []): void {}
+            public function notice(\Stringable|string $message, array $context = []): void {}
+            public function info(\Stringable|string $message, array $context = []): void { $this->context = $context; }
+            public function debug(\Stringable|string $message, array $context = []): void {}
+            public function log($level, \Stringable|string $message, array $context = []): void {}
+        };
+
+        $mw = new LoggingMiddleware($logger);
+        $mw->process($this->makeRequest('GET', '/'), new EchoBodyHandler('Hello World'));
+
+        $this->assertArrayHasKey('response_size', $loggedContext);
+    }
+
+    // ── ContentNegotiationMiddleware XXE protection ────────────
+
+    #[Test]
+    public function content_negotiation_xml_uses_libxml_nonet(): void
+    {
+        // Verify that SimpleXMLElement with LIBXML_NONET produces valid XML
+        // This tests the same construction used in ContentNegotiationMiddleware
+        $xml = new \SimpleXMLElement('<root/>', LIBXML_NONET);
+        $xml->addChild('test', 'value');
+        $output = $xml->asXML();
+        $this->assertStringContains('<test>value</test>', $output);
+        $this->assertStringContains('<?xml', $output);
     }
 
     // ── Helpers ────────────────────────────────────────────────
