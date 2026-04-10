@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -9,28 +8,41 @@ use Psr\Http\Message\StreamInterface;
 use RuntimeException;
 
 /**
- * A simple PSR‑7 Stream implementation wrapping a PHP resource.
+ * MonkeysLegion Framework — HTTP Package
  *
- * Provides methods to read, write, and manage stream metadata.
+ * PSR-7 Stream implementation wrapping a native PHP resource.
+ *
+ * All read/write/seek operations guard against detached or closed
+ * streams, throwing RuntimeException when the resource is gone.
+ *
+ * PHP 8.4 features used:
+ *  • readonly promoted constructor parameter
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class Stream implements StreamInterface
+final class Stream implements StreamInterface
 {
-    /**
-     * @param resource $resource  A valid PHP stream resource (e.g. fopen handle)
-     * @throws InvalidArgumentException if $resource is not a resource
-     */
-    public function __construct(private $resource)
-    {
-        if (!is_resource($this->resource)) {
-            throw new InvalidArgumentException('Stream resource must be a valid resource');
-        }
-    }
+    /** @var resource|null */
+    private $resource;
 
     /**
-     * Create an in-memory temporary stream initialized with optional content.
+     * @param resource $resource A valid PHP stream resource.
      *
-     * @param string $content  Initial data to write into the stream
-     * @return self
+     * @throws InvalidArgumentException If $resource is not a resource.
+     */
+    public function __construct($resource)
+    {
+        if (!is_resource($resource)) {
+            throw new InvalidArgumentException('Stream requires a valid PHP resource.');
+        }
+        $this->resource = $resource;
+    }
+
+    // ── Factories ──────────────────────────────────────────────
+
+    /**
+     * Create an in-memory stream from a string.
      */
     public static function createFromString(string $content = ''): self
     {
@@ -43,10 +55,30 @@ class Stream implements StreamInterface
     }
 
     /**
-     * Return the entire stream contents as a string.
+     * Create a read-only stream from a file path.
      *
-     * @return string
+     * @throws RuntimeException If the file cannot be opened.
      */
+    public static function createFromFile(string $path, string $mode = 'rb'): self
+    {
+        $handle = @fopen($path, $mode);
+        if ($handle === false) {
+            throw new RuntimeException(sprintf('Cannot open file "%s" with mode "%s".', $path, $mode));
+        }
+        return new self($handle);
+    }
+
+    /**
+     * Create an empty writable stream (php://temp).
+     */
+    public static function empty(): self
+    {
+        return new self(fopen('php://temp', 'r+'));
+    }
+
+    // ── StreamInterface ────────────────────────────────────────
+
+    /** {@inheritDoc} */
     public function __toString(): string
     {
         try {
@@ -57,22 +89,16 @@ class Stream implements StreamInterface
         }
     }
 
-    /**
-     * Close the stream and detach underlying resource.
-     */
+    /** {@inheritDoc} */
     public function close(): void
     {
         if (is_resource($this->resource)) {
             fclose($this->resource);
         }
-        $this->detach();
+        $this->resource = null;
     }
 
-    /**
-     * Detach the underlying resource and return it.
-     *
-     * @return resource|null
-     */
+    /** {@inheritDoc} */
     public function detach()
     {
         $res = $this->resource;
@@ -80,160 +106,139 @@ class Stream implements StreamInterface
         return $res;
     }
 
-    /**
-     * Get the size in bytes of the stream, if known.
-     *
-     * @return int|null
-     */
+    /** {@inheritDoc} */
     public function getSize(): ?int
     {
+        if ($this->resource === null) {
+            return null;
+        }
         $stats = fstat($this->resource);
         return $stats['size'] ?? null;
     }
 
-    /**
-     * Get the current position of the file read/write pointer.
-     *
-     * @return int
-     * @throws RuntimeException on failure
-     */
+    /** {@inheritDoc} */
     public function tell(): int
     {
+        $this->guardDetached();
         $pos = ftell($this->resource);
         if ($pos === false) {
-            throw new RuntimeException('Unable to determine stream position');
+            throw new RuntimeException('Unable to determine stream position.');
         }
         return $pos;
     }
 
-    /**
-     * Returns true if the stream is at the end.
-     *
-     * @return bool
-     */
+    /** {@inheritDoc} */
     public function eof(): bool
     {
-        return feof($this->resource);
+        return $this->resource === null || feof($this->resource);
     }
 
-    /**
-     * Returns whether the stream is seekable.
-     *
-     * @return bool
-     */
+    /** {@inheritDoc} */
     public function isSeekable(): bool
     {
-        $meta = $this->getMetadata();
+        if ($this->resource === null) {
+            return false;
+        }
+        $meta = stream_get_meta_data($this->resource);
         return $meta['seekable'] ?? false;
     }
 
-    /**
-     * Seek to a position in the stream.
-     *
-     * @param int $offset  Stream offset to seek to
-     * @param int $whence  SEEK_SET, SEEK_CUR, or SEEK_END
-     * @throws RuntimeException on failure
-     */
+    /** {@inheritDoc} */
     public function seek($offset, $whence = SEEK_SET): void
     {
+        $this->guardDetached();
         if (!$this->isSeekable() || fseek($this->resource, $offset, $whence) === -1) {
-            throw new RuntimeException('Unable to seek in stream');
+            throw new RuntimeException('Unable to seek in stream.');
         }
     }
 
-    /**
-     * Rewind to the start of the stream.
-     */
+    /** {@inheritDoc} */
     public function rewind(): void
     {
         $this->seek(0);
     }
 
-    /**
-     * Returns whether the stream is writable.
-     *
-     * @return bool
-     */
+    /** {@inheritDoc} */
     public function isWritable(): bool
     {
-        $mode = $this->getMetadata('mode');
-        return str_contains((string)$mode, 'w') || str_contains((string)$mode, '+');
+        if ($this->resource === null) {
+            return false;
+        }
+        $mode = stream_get_meta_data($this->resource)['mode'] ?? '';
+        return str_contains($mode, 'w') || str_contains($mode, '+') || str_contains($mode, 'a') || str_contains($mode, 'x') || str_contains($mode, 'c');
     }
 
-    /**
-     * Write data to the stream.
-     *
-     * @param string $string  Data to write
-     * @return int            Number of bytes written
-     * @throws RuntimeException on failure
-     */
+    /** {@inheritDoc} */
     public function write($string): int
     {
+        $this->guardDetached();
+        if (!$this->isWritable()) {
+            throw new RuntimeException('Stream is not writable.');
+        }
         $bytes = fwrite($this->resource, $string);
         if ($bytes === false) {
-            throw new RuntimeException('Unable to write to stream');
+            throw new RuntimeException('Unable to write to stream.');
         }
         return $bytes;
     }
 
-    /**
-     * Returns whether the stream is readable.
-     *
-     * @return bool
-     */
+    /** {@inheritDoc} */
     public function isReadable(): bool
     {
-        $mode = $this->getMetadata('mode');
-        return str_contains((string)$mode, 'r') || str_contains((string)$mode, '+');
+        if ($this->resource === null) {
+            return false;
+        }
+        $mode = stream_get_meta_data($this->resource)['mode'] ?? '';
+        return str_contains($mode, 'r') || str_contains($mode, '+');
     }
 
-    /**
-     * Read data from the stream.
-     *
-     * @param int $length  Maximum number of bytes to read
-     * @return string
-     * @throws InvalidArgumentException if $length is negative
-     * @throws RuntimeException on failure
-     */
+    /** {@inheritDoc} */
     public function read($length): string
     {
+        $this->guardDetached();
         if ($length < 0) {
-            throw new InvalidArgumentException('Length parameter cannot be negative');
+            throw new InvalidArgumentException('Read length cannot be negative.');
+        }
+        if (!$this->isReadable()) {
+            throw new RuntimeException('Stream is not readable.');
         }
         $data = fread($this->resource, $length);
         if ($data === false) {
-            throw new RuntimeException('Unable to read from stream');
+            throw new RuntimeException('Unable to read from stream.');
         }
         return $data;
     }
 
-    /**
-     * Returns the remaining contents in a string.
-     *
-     * @return string
-     * @throws RuntimeException on failure
-     */
+    /** {@inheritDoc} */
     public function getContents(): string
     {
+        $this->guardDetached();
         $contents = stream_get_contents($this->resource);
         if ($contents === false) {
-            throw new RuntimeException('Unable to read stream contents');
+            throw new RuntimeException('Unable to read stream contents.');
         }
         return $contents;
     }
 
-    /**
-     * Retrieve stream metadata as an associative array or specific key.
-     *
-     * @param string|null $key  Metadata key or null for all
-     * @return mixed
-     */
+    /** {@inheritDoc} */
     public function getMetadata($key = null): mixed
     {
-        $meta = stream_get_meta_data($this->resource);
-        if ($key === null) {
-            return $meta;
+        if ($this->resource === null) {
+            return $key === null ? [] : null;
         }
-        return $meta[$key] ?? null;
+        $meta = stream_get_meta_data($this->resource);
+        return $key === null ? $meta : ($meta[$key] ?? null);
+    }
+
+    // ── Internal ───────────────────────────────────────────────
+
+    /**
+     * @throws RuntimeException If the stream resource has been detached.
+     */
+    private function guardDetached(): void
+    {
+        if ($this->resource === null) {
+            throw new RuntimeException('Stream has been detached.');
+        }
     }
 }

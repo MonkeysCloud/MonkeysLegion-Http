@@ -1,6 +1,6 @@
 {
   "name": "monkeyscloud/monkeyslegion-http",
-  "description": "PSR‑7 HTTP message implementations and SAPI emitter for the MonkeysLegion framework.",
+  "description": "High-performance PSR-7/PSR-15 HTTP message implementations, middleware, and SAPI emitter for the MonkeysLegion framework.",
   "type": "library",
   "license": "MIT",
   "require": {
@@ -8,12 +8,15 @@
     "psr/http-message": "^2.0",
     "psr/http-server-middleware": "^1.0",
     "psr/http-server-handler": "^1.0",
-    "guzzlehttp/psr7": "^2.7",
-    "http-interop/http-factory-guzzle": "^1.2",
-    "psr/simple-cache": "^3.0",
-    "monkeyscloud/monkeyslegion-logger": "^1.0",
-    "monkeyscloud/monkeyslegion-template": "^1.0",
-    "monkeyscloud/monkeyslegion-session": "^1.0"
+    "psr/http-factory": "^1.1",
+    "psr/simple-cache": "^3.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.0",
+    "psr/log": "^3.0"
+  },
+  "suggest": {
+    "psr/log": "^3.0 — Required for ErrorHandler PSR-3 logging"
   },
   "autoload": {
     "psr-4": {
@@ -23,9 +26,14 @@
       "src/Support/helpers.php"
     ]
   },
+  "autoload-dev": {
+    "psr-4": {
+      "MonkeysLegion\\Http\\Tests\\": "tests/"
+    }
+  },
   "extra": {
     "branch-alias": {
-      "dev-main": "1.0.x-dev"
+      "dev-2.x-dev": "2.0.x-dev"
     }
   }
 }

@@ -1,25 +1,34 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error\Renderer;
 
-class JsonErrorRenderer implements ErrorRendererInterface
+use Throwable;
+
+/**
+ * MonkeysLegion Framework — HTTP Package
+ *
+ * JSON error renderer for API responses.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
+ */
+final class JsonErrorRenderer implements ErrorRendererInterface
 {
-    public function render(\Throwable $exception, bool $debug = false): string
+    public function render(Throwable $exception, bool $debug = false): string
     {
         $data = [
-            'error' => true,
-            'message' => $debug ? $exception->getMessage() : 'An unexpected error occurred.',
-            'timestamp' => date('c')
+            'status'    => 'error',
+            'message'   => $debug ? $exception->getMessage() : 'An unexpected error occurred.',
+            'timestamp' => date('c'),
         ];
 
         if ($debug) {
             $data['debug'] = [
-                'type' => get_class($exception),
-                'file' => $exception->getFile(),
-                'line' => $exception->getLine(),
-                'trace' => $exception->getTrace()
+                'type'  => $exception::class,
+                'file'  => $exception->getFile(),
+                'line'  => $exception->getLine(),
+                'trace' => $exception->getTrace(),
             ];
         }
 

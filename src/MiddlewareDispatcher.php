@@ -3,38 +3,44 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http;
 
-use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
+/**
+ * MonkeysLegion Framework — HTTP Package
+ *
+ * Lightweight middleware dispatcher using an indexed cursor.
+ *
+ * Instead of array_shift (O(n) re-index on each call), uses a cursor
+ * index for O(1) dispatch. The dispatcher instance is single-use.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
+ */
 final class MiddlewareDispatcher implements RequestHandlerInterface
 {
-    /** @var MiddlewareInterface[] */
-    private array $middlewareQueue;
-
-    private RequestHandlerInterface $finalHandler;
+    private int $cursor = 0;
 
     /**
-     * @param MiddlewareInterface[]       $middlewareQueue
+     * @param list<MiddlewareInterface>   $middlewareStack
      * @param RequestHandlerInterface     $finalHandler
      */
-    public function __construct(array $middlewareQueue, RequestHandlerInterface $finalHandler)
-    {
-        $this->middlewareQueue = $middlewareQueue;
-        $this->finalHandler   = $finalHandler;
-    }
+    public function __construct(
+        private readonly array                   $middlewareStack,
+        private readonly RequestHandlerInterface $finalHandler,
+    ) {}
 
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        if (empty($this->middlewareQueue)) {
+        if (!isset($this->middlewareStack[$this->cursor])) {
             return $this->finalHandler->handle($request);
         }
 
-        // pull off the next middleware
-        $middleware = array_shift($this->middlewareQueue);
+        $middleware = $this->middlewareStack[$this->cursor];
+        $this->cursor++;
 
-        // invoke it, passing ourselves (with the remaining queue) as handler
         return $middleware->process($request, $this);
     }
 }
