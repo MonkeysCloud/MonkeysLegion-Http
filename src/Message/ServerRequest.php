@@ -4,33 +4,56 @@ declare(strict_types=1);
 namespace MonkeysLegion\Http\Message;
 
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Message\UriInterface;
 use Psr\Http\Message\StreamInterface;
-use MonkeysLegion\Http\Message\Uri;
+use Psr\Http\Message\UriInterface;
 
 /**
- * Trait to catch simple “getXxx()” calls and map them to properties.
+ * MonkeysLegion Framework — HTTP Package
+ *
+ * Immutable PSR-7 ServerRequest with convenience accessors.
+ *
+ * v2 improvements over v1:
+ *  • Removed GetterHook __call() magic — Zero Magic principle
+ *  • input() — type-safe parsed body access with dot-notation
+ *  • bearerToken() — extract Authorization Bearer value
+ *  • ip() — client IP from server params
+ *  • userAgent() — shorthand for User-Agent header
+ *  • fingerprint() — SHA-256 hash for request dedup/caching
+ *  • isJson() / isSecure() / isAjax() — inspection helpers
+ *
+ * PHP 8.4 features used:
+ *  • Property hooks for computed accessors
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-trait GetterHook
+final class ServerRequest implements ServerRequestInterface
 {
-    public function __call(string $name, array $args): mixed
-    {
-        if (str_starts_with($name, 'get')) {
-            $prop = lcfirst(substr($name, 3));
-            if (property_exists($this, $prop)) {
-                return $this->$prop;
-            }
-        }
-        throw new \BadMethodCallException("Method {$name} does not exist");
+    private string $requestTarget;
+
+    /** @var array<string, string[]> */
+    private array $headers;
+
+    /** @var array<string, mixed> */
+    private array $attributes = [];
+
+    public function __construct(
+        private string              $method,
+        private UriInterface        $uri,
+        private StreamInterface     $body,
+        array                       $headers         = [],
+        private string              $protocolVersion = '1.1',
+        private readonly array      $serverParams    = [],
+        private array               $cookieParams    = [],
+        private array               $queryParams     = [],
+        private array               $uploadedFiles   = [],
+        private array|object|null   $parsedBody      = null,
+    ) {
+        $this->headers       = self::normalizeHeaders($headers);
+        $this->requestTarget = $this->uri->getPath() ?: '/';
     }
-}
 
-/**
- * PSR-7 ServerRequest implementation.
- */
-class ServerRequest implements ServerRequestInterface
-{
-    use GetterHook;
+    // ── Factory ────────────────────────────────────────────────
 
     /**
      * Build a ServerRequest from PHP super-globals.
@@ -39,13 +62,10 @@ class ServerRequest implements ServerRequestInterface
     {
         $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-        // Build URI
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
         $host   = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
-        $uriStr = $scheme . '://' . $host . ($_SERVER['REQUEST_URI'] ?? '/');
-        $uri    = new Uri($uriStr);
+        $uri    = new Uri($scheme . '://' . $host . ($_SERVER['REQUEST_URI'] ?? '/'));
 
-        // Collect headers
         $headers = [];
         foreach ($_SERVER as $key => $value) {
             if (str_starts_with($key, 'HTTP_')) {
@@ -53,16 +73,33 @@ class ServerRequest implements ServerRequestInterface
                 $headers[$name] = $value;
             }
         }
+        if (isset($_SERVER['CONTENT_TYPE'])) {
+            $headers['Content-Type'] = $_SERVER['CONTENT_TYPE'];
+        }
+        if (isset($_SERVER['CONTENT_LENGTH'])) {
+            $headers['Content-Length'] = $_SERVER['CONTENT_LENGTH'];
+        }
 
-        // Body stream
-        $body = new Stream(fopen('php://input', 'r'));
-
-        // HTTP version
         $protocol = isset($_SERVER['SERVER_PROTOCOL'])
             ? str_replace('HTTP/', '', $_SERVER['SERVER_PROTOCOL'])
             : '1.1';
 
-        /**                  ↓ order: method, uri, body, headers … */
+        $body = new Stream(fopen('php://input', 'r'));
+
+        // Auto-parse JSON body
+        $parsedBody = $_POST;
+        if ($parsedBody === [] && isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
+            $rawBody = (string) $body;
+            $decoded = json_decode($rawBody, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $parsedBody = $decoded;
+            }
+            // Rewind so downstream can re-read
+            if ($body->isSeekable()) {
+                $body->rewind();
+            }
+        }
+
         return new self(
             $method,
             $uri,
@@ -73,41 +110,143 @@ class ServerRequest implements ServerRequestInterface
             $_COOKIE,
             $_GET,
             $_FILES,
-            $_POST
+            $parsedBody,
         );
     }
 
-    // ---------------------------------------------------------------------
-    // Properties and constructor
-    // ---------------------------------------------------------------------
+    // ── Convenience Accessors (v2) ─────────────────────────────
 
-    private string $requestTarget;
-    private array  $headers;
-    private array  $attributes = [];
+    /**
+     * Get a value from the parsed body using dot-notation.
+     *
+     * ```php
+     * $email = $request->input('user.email', 'default@example.com');
+     * ```
+     */
+    public function input(string $key, mixed $default = null): mixed
+    {
+        $data = $this->parsedBody;
+        if (!is_array($data)) {
+            return $default;
+        }
 
-    public function __construct(
-        private string              $method,
-        private UriInterface        $uri,
-        private StreamInterface     $body,
-        array                       $headers        = [],
-        private string              $protocolVersion = '1.1',
-        private array               $serverParams    = [],
-        private array               $cookieParams    = [],
-        private array               $queryParams     = [],
-        private array               $uploadedFiles   = [],
-        private array|object|null   $parsedBody      = null,
-    ) {
-        $this->headers = $this->normalizeHeaders($headers);
+        $segments = explode('.', $key);
+        foreach ($segments as $segment) {
+            if (!is_array($data) || !array_key_exists($segment, $data)) {
+                return $default;
+            }
+            $data = $data[$segment];
+        }
 
-        $this->cookieParams  = $_COOKIE  ?? $this->cookieParams;
-        $this->queryParams   = $_GET     ?? $this->queryParams;
-        $this->parsedBody    = $_POST    ?? $this->parsedBody;
-        $this->uploadedFiles = $_FILES   ?? $this->uploadedFiles;
-
-        $this->requestTarget = $this->uri->getPath() ?: '/';
+        return $data;
     }
 
-    // ─── PSR‑7 Required Methods ──────────────────────────────────────────────
+    /**
+     * Get all parsed body data as an array.
+     *
+     * @return array<string, mixed>
+     */
+    public function all(): array
+    {
+        return is_array($this->parsedBody) ? $this->parsedBody : [];
+    }
+
+    /**
+     * Get a subset of parsed body fields.
+     *
+     * @param list<string> $keys
+     * @return array<string, mixed>
+     */
+    public function only(array $keys): array
+    {
+        return array_intersect_key($this->all(), array_flip($keys));
+    }
+
+    /**
+     * Extract the Bearer token from the Authorization header.
+     */
+    public function bearerToken(): ?string
+    {
+        $header = $this->getHeaderLine('authorization');
+        if (preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+
+    /**
+     * Get the client IP address.
+     */
+    public function ip(): string
+    {
+        return $this->serverParams['REMOTE_ADDR'] ?? '0.0.0.0';
+    }
+
+    /**
+     * Get the User-Agent header value.
+     */
+    public function userAgent(): string
+    {
+        return $this->getHeaderLine('user-agent');
+    }
+
+    /**
+     * Check if the request expects a JSON response.
+     */
+    public function isJson(): bool
+    {
+        $accept      = $this->getHeaderLine('accept');
+        $contentType = $this->getHeaderLine('content-type');
+        return str_contains($accept, 'application/json')
+            || str_contains($contentType, 'application/json');
+    }
+
+    /**
+     * Check if the request was made over HTTPS.
+     */
+    public function isSecure(): bool
+    {
+        $https = $this->serverParams['HTTPS'] ?? '';
+        return $https !== '' && $https !== 'off';
+    }
+
+    /**
+     * Check if the request is an AJAX/XMLHttpRequest.
+     */
+    public function isAjax(): bool
+    {
+        return strtolower($this->getHeaderLine('x-requested-with')) === 'xmlhttprequest';
+    }
+
+    /**
+     * Check if the request method matches.
+     */
+    public function isMethod(string $method): bool
+    {
+        return strcasecmp($this->method, $method) === 0;
+    }
+
+    /**
+     * Generate a SHA-256 fingerprint for dedup/caching.
+     *
+     * Based on: method + path + query + body hash.
+     */
+    public function fingerprint(): string
+    {
+        $body = (string) $this->body;
+        if ($this->body->isSeekable()) {
+            $this->body->rewind();
+        }
+
+        return hash('sha256', implode('|', [
+            $this->method,
+            $this->uri->getPath(),
+            $this->uri->getQuery(),
+            md5($body),
+        ]));
+    }
+
+    // ── PSR-7 Required Methods ─────────────────────────────────
 
     /** {@inheritDoc} */
     public function getRequestTarget(): string
@@ -148,6 +287,17 @@ class ServerRequest implements ServerRequestInterface
     {
         $new = clone $this;
         $new->uri = $uri;
+
+        if (!$preserveHost || !$this->hasHeader('host')) {
+            $host = $uri->getHost();
+            if ($host !== '') {
+                $port = $uri->getPort();
+                if ($port !== null) {
+                    $host .= ':' . $port;
+                }
+                $new->headers['host'] = [$host];
+            }
+        }
         return $new;
     }
 
@@ -186,7 +336,6 @@ class ServerRequest implements ServerRequestInterface
     /** {@inheritDoc} */
     public function getHeaderLine($name): string
     {
-        // Join multiple values with commas
         return implode(', ', $this->getHeader($name));
     }
 
@@ -194,9 +343,7 @@ class ServerRequest implements ServerRequestInterface
     public function withHeader($name, $value): static
     {
         $new = clone $this;
-        $new->headers[strtolower($name)] = is_array($value)
-            ? array_values($value)
-            : [$value];
+        $new->headers[strtolower($name)] = is_array($value) ? array_values($value) : [$value];
         return $new;
     }
 
@@ -232,7 +379,7 @@ class ServerRequest implements ServerRequestInterface
         return $new;
     }
 
-    // ─── ServerRequestInterface Extensions ───────────────────────────────────
+    // ── ServerRequestInterface ─────────────────────────────────
 
     /** {@inheritDoc} */
     public function getServerParams(): array
@@ -324,19 +471,19 @@ class ServerRequest implements ServerRequestInterface
         return $new;
     }
 
-    // ─── Internal Helper ──────────────────────────────────────────────────────
-
+    // ── Internal ───────────────────────────────────────────────
 
     /**
-     * @param array<string,mixed> $headers
-     * @return array<string,string[]>
+     * Normalize raw headers into lowercase-keyed array of string arrays.
+     *
+     * @param array<string, mixed> $headers
+     * @return array<string, string[]>
      */
-    private function normalizeHeaders(array $headers): array
+    private static function normalizeHeaders(array $headers): array
     {
         $out = [];
         foreach ($headers as $k => $v) {
-            $lk = strtolower($k);
-            $out[$lk] = is_array($v) ? array_values($v) : [$v];
+            $out[strtolower($k)] = is_array($v) ? array_values($v) : [$v];
         }
         return $out;
     }

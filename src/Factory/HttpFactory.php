@@ -3,143 +3,83 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Factory;
 
-use GuzzleHttp\Psr7\HttpFactory as GuzzleFactory;
-use Psr\Http\Message\{
-    RequestInterface, ResponseInterface, ServerRequestInterface,
-    StreamInterface, UploadedFileInterface, UriInterface
-};
-use Psr\Http\Message\{
-    RequestFactoryInterface, ResponseFactoryInterface,
-    ServerRequestFactoryInterface, StreamFactoryInterface,
-    UploadedFileFactoryInterface, UriFactoryInterface
-};
+use MonkeysLegion\Http\Message\Response;
+use MonkeysLegion\Http\Message\ServerRequest;
+use MonkeysLegion\Http\Message\Stream;
+use MonkeysLegion\Http\Message\Uri;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestFactoryInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
+use Psr\Http\Message\UriFactoryInterface;
+use Psr\Http\Message\UriInterface;
 
 /**
- * HttpFactory is a concrete implementation of the PSR-17 factories
- * using Guzzle's HttpFactory.
+ * MonkeysLegion Framework — HTTP Package
  *
- * @see https://www.php-fig.org/psr/psr-17/
+ * PSR-17 factory implementation using MonkeysLegion's own
+ * PSR-7 message classes. No external dependencies.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 final class HttpFactory implements
-    RequestFactoryInterface,
     ResponseFactoryInterface,
     ServerRequestFactoryInterface,
     StreamFactoryInterface,
-    UploadedFileFactoryInterface,
     UriFactoryInterface
 {
-    /**
-     * @var GuzzleFactory
-     */
-    private GuzzleFactory $inner;
-
-    /**
-     * HttpFactory constructor.
-     */
-    public function __construct()
-    {
-        $this->inner = new GuzzleFactory();
-    }
-
-    /**
-     * Creates a new request instance.
-     *
-     * @param string $method
-     * @param $uri
-     * @return RequestInterface
-     */
-    public function createRequest(string $method, $uri): RequestInterface
-    {
-        return $this->inner->createRequest($method, $uri);
-    }
-
-    /**
-     * Creates a new response instance.
-     *
-     * @param int $code
-     * @param string $reasonPhrase
-     * @return ResponseInterface
-     */
+    /** {@inheritDoc} */
     public function createResponse(int $code = 200, string $reasonPhrase = ''): ResponseInterface
     {
-        return $this->inner->createResponse($code, $reasonPhrase);
+        return new Response(
+            Stream::empty(),
+            $code,
+            [],
+            '1.1',
+            $reasonPhrase,
+        );
     }
 
-    /**
-     * Creates a new server request instance.
-     *
-     * @param string $method
-     * @param $uri
-     * @param array $serverParams
-     * @return ServerRequestInterface
-     */
+    /** {@inheritDoc} */
     public function createServerRequest(string $method, $uri, array $serverParams = []): ServerRequestInterface
     {
-        return $this->inner->createServerRequest($method, $uri, $serverParams);
+        $uriObj = is_string($uri) ? new Uri($uri) : $uri;
+
+        return new ServerRequest(
+            $method,
+            $uriObj,
+            Stream::empty(),
+            [],
+            '1.1',
+            $serverParams,
+        );
     }
 
-    /**
-     * Creates a new stream instance.
-     *
-     * @param string $content
-     * @return StreamInterface
-     */
+    /** {@inheritDoc} */
     public function createStream(string $content = ''): StreamInterface
     {
-        return $this->inner->createStream($content);
+        return Stream::createFromString($content);
     }
 
-    /**
-     * Creates a new stream from a file.
-     *
-     * @param string $filename
-     * @param string $mode
-     * @return StreamInterface
-     */
+    /** {@inheritDoc} */
     public function createStreamFromFile(string $filename, string $mode = 'r'): StreamInterface
     {
-        return $this->inner->createStreamFromFile($filename, $mode);
+        return Stream::createFromFile($filename, $mode);
     }
 
-    /**
-     * Creates a new stream from a resource.
-     *
-     * @param resource $resource
-     * @return StreamInterface
-     */
+    /** {@inheritDoc} */
     public function createStreamFromResource($resource): StreamInterface
     {
-        return $this->inner->createStreamFromResource($resource);
+        return new Stream($resource);
     }
 
-    /**
-     * Creates a new uploaded file instance.
-     *
-     * @param StreamInterface $stream
-     * @param int|null $size
-     * @param int $error
-     * @param string|null $clientFilename
-     * @param string|null $clientMediaType
-     * @return UploadedFileInterface
-     */
-    public function createUploadedFile(
-        StreamInterface $stream,
-        ?int            $size = null,
-        int             $error = \UPLOAD_ERR_OK,
-        ?string         $clientFilename = null,
-        ?string         $clientMediaType = null
-    ): UploadedFileInterface {
-        return $this->inner->createUploadedFile($stream, $size, $error, $clientFilename, $clientMediaType);
-    }
-
-    /**
-     * Creates a new URI instance.
-     *
-     * @param string $uri
-     * @return UriInterface
-     */
+    /** {@inheritDoc} */
     public function createUri(string $uri = ''): UriInterface
     {
-        return $this->inner->createUri($uri);
+        return new Uri($uri);
     }
 }

@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error\Renderer;
 
-class HtmlErrorRenderer implements ErrorRendererInterface
+/**
+ * MonkeysLegion Framework — HTTP Package
+ *
+ * HTML error renderer with styled debug page.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
+ */
+final class HtmlErrorRenderer implements ErrorRendererInterface
 {
     public function render(\Throwable $e, bool $debug = false): string
     {
-        $errorType = get_class($e);
+        $errorType = $e::class;
         $message = htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
         $file = htmlspecialchars($e->getFile(), ENT_QUOTES, 'UTF-8');
         $line = $e->getLine();

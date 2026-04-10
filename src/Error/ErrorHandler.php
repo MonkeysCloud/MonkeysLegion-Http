@@ -1,76 +1,83 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error;
 
-use Throwable;
 use ErrorException;
-use MonkeysLegion\Http\Error\Renderer\{ErrorRendererInterface, JsonErrorRenderer};
-use MonkeysLegion\Logger\Contracts\MonkeysLoggerInterface;
+use MonkeysLegion\Http\Error\Renderer\ErrorRendererInterface;
+use MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
- * Robust error handler that handles all edge cases gracefully
+ * MonkeysLegion Framework — HTTP Package
+ *
+ * Global error handler with recursive-exception protection,
+ * reserved memory for OOM scenarios, and PSR-3 logging.
+ *
+ * v2 improvements:
+ *  • Uses PSR-3 LoggerInterface instead of custom MonkeysLoggerInterface
+ *  • final class
+ *  • Reserved 2 MB memory for fatal error handling
+ *  • Infinite-loop guard via handling stack
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
-class ErrorHandler
+final class ErrorHandler
 {
     private ErrorRendererInterface $renderer;
-    private ?MonkeysLoggerInterface $logger = null;
-    private bool $debug;
+    private ?LoggerInterface $logger = null;
 
-    /** @var array<string, float> Track exception handling to prevent infinite loops */
+    /** @var array<string, float> Track exception handling to prevent infinite loops. */
     private static array $handlingStack = [];
 
-    /** @var int Maximum recursion depth before giving up */
-    private const MAX_RECURSION_DEPTH = 3;
+    private const int MAX_RECURSION_DEPTH = 3;
+    private const int RESERVED_MEMORY_SIZE = 2_097_152; // 2 MB
 
-    /** @var int Memory reserved for error handling (2MB) */
-    private const RESERVED_MEMORY_SIZE = 2097152;
-
-    /** @var string|null Reserved memory for fatal error handling */
+    /** Reserved memory freed on fatal errors so the handler can run. */
     private static ?string $reservedMemory = null;
 
     public function __construct(
-        bool $debug = false
+        private readonly bool $debug = false,
     ) {
         $this->renderer = new JsonErrorRenderer();
-        $this->debug = $debug;
 
-        // Reserve memory for fatal error handling
         if (self::$reservedMemory === null) {
             self::$reservedMemory = str_repeat('x', self::RESERVED_MEMORY_SIZE);
         }
     }
 
+    /**
+     * Set the error renderer.
+     */
     public function useRenderer(ErrorRendererInterface $renderer): void
     {
         $this->renderer = $renderer;
     }
 
-    public function useLogger(MonkeysLoggerInterface $logger): void
+    /**
+     * Set a PSR-3 logger.
+     */
+    public function useLogger(LoggerInterface $logger): void
     {
         $this->logger = $logger;
     }
 
-    public function setDebug(bool $debug): void
-    {
-        $this->debug = $debug;
-    }
-
+    /**
+     * Register this handler as global exception/error/shutdown handler.
+     */
     public function register(): void
     {
-        // Set unlimited memory for error handling (within reason)
-        ini_set('memory_limit', '256M');
-
-        // Register all error handlers
         set_exception_handler([$this, 'handleException']);
         set_error_handler([$this, 'handleError'], E_ALL);
         register_shutdown_function([$this, 'handleShutdown']);
-
-        // Don't let PHP display errors
         ini_set('display_errors', '0');
     }
 
+    /**
+     * Restore the previous exception/error handlers.
+     */
     public function unregister(): void
     {
         restore_exception_handler();
@@ -78,177 +85,140 @@ class ErrorHandler
         self::$handlingStack = [];
     }
 
+    // ── Handlers ───────────────────────────────────────────────
+
     public function handleException(Throwable $exception): void
     {
         $exceptionId = $this->getExceptionId($exception);
 
-        // Check if we're already handling this specific exception
-        if ($this->isAlreadyHandling($exceptionId)) {
-            $this->emergencyResponse("Recursive exception detected", $exception);
+        if (isset(self::$handlingStack[$exceptionId])) {
+            $this->emergencyResponse('Recursive exception detected', $exception);
             return;
         }
 
-        // Check recursion depth
         if (count(self::$handlingStack) >= self::MAX_RECURSION_DEPTH) {
-            $this->emergencyResponse("Maximum recursion depth exceeded", $exception);
+            $this->emergencyResponse('Maximum recursion depth exceeded', $exception);
             return;
         }
 
-        // Mark this exception as being handled
         self::$handlingStack[$exceptionId] = microtime(true);
 
         try {
             $this->doHandleException($exception);
-        } catch (Throwable $handlingException) {
-            $this->handleNestedExceptionFailure($exception, $handlingException);
+        } catch (Throwable $nested) {
+            $this->handleNestedFailure($exception, $nested);
         } finally {
-            // Always clean up, even if something went wrong
             unset(self::$handlingStack[$exceptionId]);
         }
     }
 
     public function handleError(int $severity, string $message, string $file, int $line): bool
     {
-        // Respect error_reporting() setting
         if (!(error_reporting() & $severity)) {
             return false;
         }
 
-        // Convert error to exception and handle it
-        $exception = new ErrorException($message, 0, $severity, $file, $line);
-        $this->handleException($exception);
-
-        return true; // Don't let PHP handle it
+        $this->handleException(new ErrorException($message, 0, $severity, $file, $line));
+        return true;
     }
 
     public function handleShutdown(): void
     {
-        // Free reserved memory for fatal error handling
         self::$reservedMemory = null;
 
-        $lastError = error_get_last();
-        if ($lastError === null) {
+        $error = error_get_last();
+        if ($error === null) {
             return;
         }
 
-        // Only handle fatal errors
-        $fatalErrorTypes = [
-            E_ERROR,
-            E_PARSE,
-            E_CORE_ERROR,
-            E_CORE_WARNING,
-            E_COMPILE_ERROR,
-            E_COMPILE_WARNING,
-            E_RECOVERABLE_ERROR
-        ];
-
-        if (!in_array($lastError['type'], $fatalErrorTypes, true)) {
+        $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR];
+        if (!in_array($error['type'], $fatalTypes, true)) {
             return;
         }
 
-        $exception = new ErrorException(
-            $lastError['message'],
+        $this->handleException(new ErrorException(
+            $error['message'],
             0,
-            $lastError['type'],
-            $lastError['file'] ?? 'unknown',
-            $lastError['line'] ?? 0
-        );
-
-        $this->handleException($exception);
+            $error['type'],
+            $error['file'] ?? 'unknown',
+            $error['line'] ?? 0,
+        ));
     }
+
+    // ── Internal ───────────────────────────────────────────────
 
     private function doHandleException(Throwable $exception): void
     {
-        // Clean any existing output buffers
         $this->cleanOutputBuffers();
-
-        // Log the exception (do this first, before any rendering that might fail)
         $this->logException($exception);
+        $this->sendErrorHeaders();
 
-        // Send appropriate HTTP status and headers
-        $this->sendErrorHeaders($exception);
-
-        // Render and output the error
-        $this->renderAndOutputError($exception);
-
-        // Exit if we're not in CLI and not in debug mode
-        $this->exitIfAppropriate();
-    }
-
-    private function renderAndOutputError(Throwable $exception): void
-    {
         try {
-            $output = $this->renderer->render($exception, $this->debug);
-            echo $output;
-        } catch (Throwable $renderException) {
-            // If custom rendering fails, use emergency fallback
-            $this->emergencyResponse("Error rendering failed", $exception, $renderException);
+            echo $this->renderer->render($exception, $this->debug);
+        } catch (Throwable) {
+            $this->emergencyResponse('Error rendering failed', $exception);
+        }
+
+        if (PHP_SAPI !== 'cli' && !$this->debug) {
+            exit(1);
         }
     }
 
-    private function handleNestedExceptionFailure(Throwable $original, Throwable $nested): void
+    private function handleNestedFailure(Throwable $original, Throwable $nested): void
     {
-        // Log both exceptions if possible
         try {
-            $this->logger->critical('Nested exception during error handling', [
+            $this->logger?->critical('Nested exception during error handling', [
                 'original' => $this->exceptionToArray($original),
-                'nested' => $this->exceptionToArray($nested)
+                'nested'   => $this->exceptionToArray($nested),
             ]);
-        } catch (Throwable $logException) {
-            // Even logging failed - use error_log as last resort
-            error_log("Critical: Multiple exception failures - " . $original->getMessage());
+        } catch (Throwable) {
+            error_log('Critical: Multiple exception failures - ' . $original->getMessage());
         }
 
-        $this->emergencyResponse("Nested exception during error handling", $original, $nested);
+        $this->emergencyResponse('Nested exception during error handling', $original, $nested);
     }
 
     private function emergencyResponse(string $reason, Throwable $exception, ?Throwable $nested = null): void
     {
-        // Last resort error handling - use only built-in PHP functions
-
         try {
             if (!headers_sent()) {
                 http_response_code(500);
                 header('Content-Type: text/plain; charset=UTF-8');
             }
-        } catch (Throwable $headerException) {
-            // Even headers failed - just continue
+        } catch (Throwable) {
+            // headers failed — continue
         }
 
         echo "Internal Server Error\n";
         echo "Reason: {$reason}\n\n";
 
         if ($this->debug) {
-            echo "Original Exception:\n";
-            echo $exception->getMessage() . "\n";
-            echo "File: " . $exception->getFile() . ":" . $exception->getLine() . "\n\n";
+            echo "Exception: {$exception->getMessage()}\n";
+            echo "File: {$exception->getFile()}:{$exception->getLine()}\n\n";
 
-            if ($nested) {
-                echo "Nested Exception:\n";
-                echo $nested->getMessage() . "\n";
-                echo "File: " . $nested->getFile() . ":" . $nested->getLine() . "\n";
+            if ($nested !== null) {
+                echo "Nested: {$nested->getMessage()}\n";
+                echo "File: {$nested->getFile()}:{$nested->getLine()}\n";
             }
         }
 
-        // Always log to error_log as last resort
-        error_log("Emergency response: {$reason} - " . $exception->getMessage());
+        error_log("Emergency: {$reason} - {$exception->getMessage()}");
 
-        if ($this->shouldExit()) {
+        if (PHP_SAPI !== 'cli' && !$this->debug) {
             exit(1);
         }
     }
 
     private function cleanOutputBuffers(): void
     {
-        // Clean all output buffers, but handle failures gracefully
         try {
             while (ob_get_level() > 0) {
                 if (!ob_end_clean()) {
-                    break; // If we can't clean a buffer, stop trying
+                    break;
                 }
             }
-        } catch (Throwable $cleanException) {
-            // Buffer cleaning failed - continue anyway
+        } catch (Throwable) {
+            // ignore
         }
     }
 
@@ -260,109 +230,65 @@ class ErrorHandler
 
         try {
             http_response_code(500);
-
-            $contentType = $this->renderer->getContentType();
-            header("Content-Type: {$contentType}; charset=UTF-8");
-
-            // Prevent caching of error pages
+            header(sprintf('Content-Type: %s; charset=UTF-8', $this->renderer->getContentType()));
             header('Cache-Control: no-cache, no-store, must-revalidate');
             header('Pragma: no-cache');
             header('Expires: 0');
-        } catch (Throwable $headerException) {
-            // Header setting failed - continue anyway
+        } catch (Throwable) {
+            // ignore
         }
     }
 
     private function logException(Throwable $exception): void
     {
-        try {
-            $context = [
-                'exception' => $this->exceptionToArray($exception),
-                'request_uri' => $_SERVER['REQUEST_URI'] ?? 'unknown',
-                'request_method' => $_SERVER['REQUEST_METHOD'] ?? 'unknown',
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
-                'ip' => $this->getClientIp(),
-                'timestamp' => date('c'),
-            ];
+        if ($this->logger === null) {
+            error_log(sprintf(
+                'Exception: %s in %s:%d',
+                $exception->getMessage(),
+                $exception->getFile(),
+                $exception->getLine(),
+            ));
+            return;
+        }
 
-            $this->logger->error($exception->getMessage(), $context);
-        } catch (Throwable $logException) {
-            // Logging failed - use error_log as fallback
-            error_log("Exception: " . $exception->getMessage() . " in " .
-                $exception->getFile() . ":" . $exception->getLine());
+        try {
+            $this->logger->error($exception->getMessage(), [
+                'exception' => $this->exceptionToArray($exception),
+                'timestamp' => date('c'),
+            ]);
+        } catch (Throwable) {
+            error_log(sprintf(
+                'Exception: %s in %s:%d',
+                $exception->getMessage(),
+                $exception->getFile(),
+                $exception->getLine(),
+            ));
         }
     }
 
     private function getExceptionId(Throwable $exception): string
     {
-        // Create unique ID based on exception details to detect exact duplicates
         return md5(
-            get_class($exception) .
-                $exception->getMessage() .
-                $exception->getFile() .
-                $exception->getLine() .
-                $exception->getTraceAsString()
+            $exception::class
+            . $exception->getMessage()
+            . $exception->getFile()
+            . $exception->getLine()
+            . $exception->getTraceAsString(),
         );
     }
 
-    private function isAlreadyHandling(string $exceptionId): bool
-    {
-        return isset(self::$handlingStack[$exceptionId]);
-    }
-
+    /**
+     * @return array<string, mixed>
+     */
     private function exceptionToArray(Throwable $exception): array
     {
         return [
-            'class' => get_class($exception),
+            'class'   => $exception::class,
             'message' => $exception->getMessage(),
-            'code' => $exception->getCode(),
-            'file' => $exception->getFile(),
-            'line' => $exception->getLine(),
-            'trace' => $this->debug ? $exception->getTraceAsString() : '[hidden]'
+            'code'    => $exception->getCode(),
+            'file'    => $exception->getFile(),
+            'line'    => $exception->getLine(),
+            'trace'   => $this->debug ? $exception->getTraceAsString() : '[hidden]',
         ];
-    }
-
-    private function getClientIp(): string
-    {
-        $headers = [
-            'HTTP_CF_CONNECTING_IP',     // Cloudflare
-            'HTTP_X_FORWARDED_FOR',      // Load balancer/proxy
-            'HTTP_X_FORWARDED',          // Proxy
-            'HTTP_X_CLUSTER_CLIENT_IP',  // Cluster
-            'HTTP_CLIENT_IP',            // Proxy
-            'REMOTE_ADDR'                // Standard
-        ];
-
-        foreach ($headers as $header) {
-            if (!empty($_SERVER[$header])) {
-                $ips = explode(',', $_SERVER[$header]);
-                return trim($ips[0]);
-            }
-        }
-
-        return 'unknown';
-    }
-
-    private function exitIfAppropriate(): void
-    {
-        if ($this->shouldExit()) {
-            exit(1);
-        }
-    }
-
-    private function shouldExit(): bool
-    {
-        // Don't exit in CLI mode
-        if (PHP_SAPI === 'cli') {
-            return false;
-        }
-
-        // Don't exit in debug mode (allows for better debugging)
-        if ($this->debug) {
-            return false;
-        }
-
-        // Exit in production web requests
-        return true;
     }
 }

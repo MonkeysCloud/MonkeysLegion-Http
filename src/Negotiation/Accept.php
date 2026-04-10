@@ -3,20 +3,31 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Negotiation;
 
+/**
+ * MonkeysLegion Framework — HTTP Package
+ *
+ * Parses HTTP Accept headers into an ordered list of MIME types.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
+ */
 final class Accept
 {
-    /** @return string[] ordered by client preference (q=…) */
+    /**
+     * Parse an Accept header into MIME types ordered by quality factor.
+     *
+     * @return list<string> MIME types ordered by decreasing q value.
+     */
     public static function parse(string $header): array
     {
         if ($header === '') {
-            return ['*/*'];                           // no header → any
+            return ['*/*'];
         }
 
         $parts = array_map('trim', explode(',', $header));
         $items = [];
 
         foreach ($parts as $p) {
-            // split “type/sub;q=0.8”
             if (!str_contains($p, ';')) {
                 $items[$p] = 1.0;
                 continue;
@@ -29,7 +40,7 @@ final class Accept
             }
         }
 
-        arsort($items, SORT_NUMERIC);                 // highest q first
+        arsort($items, SORT_NUMERIC);
         return array_keys($items);
     }
 }

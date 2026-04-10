@@ -1,79 +1,100 @@
 <?php
-
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http;
 
-use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 /**
- * Core PSR-15 dispatcher.
+ * MonkeysLegion Framework — HTTP Package
  *
- *  • Allows you to “pipe” middlewares (à-la Express / Laminas Stratigility).
- *  • After the middleware stack is exhausted, it calls the
- *    final application handler (usually your router).
+ * Core PSR-15 request handler with middleware pipeline.
+ *
+ * Allows piping middleware à-la Express / Laminas Stratigility.
+ * After the pipeline is exhausted, delegates to the final app handler
+ * (usually the router / controller resolver).
+ *
+ * v2 optimization: pre-builds the handler chain on pipe() instead
+ * of rebuilding via array_reduce on every handle() call.
+ *
+ * @copyright 2026 MonkeysCloud Team
+ * @license   MIT
  */
 final class CoreRequestHandler implements RequestHandlerInterface
 {
-    /** @var MiddlewareInterface[] */
+    /** @var list<MiddlewareInterface> */
     private array $pipeline = [];
 
+    /** Pre-built handler chain (rebuilt when pipeline changes). */
+    private ?RequestHandlerInterface $chain = null;
+
+    /** Once locked, no more middleware can be piped. */
+    private bool $locked = false;
+
     public function __construct(
-        private readonly RequestHandlerInterface  $appHandler,        // final handler (router / controller resolver)
-        private readonly ResponseFactoryInterface $responseFactory    // PSR-17 factory to create responses
+        private readonly RequestHandlerInterface $appHandler,
     ) {}
 
     /**
      * Push a middleware to the end of the stack.
+     *
+     * @throws \RuntimeException If the pipeline has been locked.
      */
     public function pipe(MiddlewareInterface $middleware): void
     {
+        if ($this->locked) {
+            throw new \RuntimeException('Cannot pipe middleware after the pipeline has been locked.');
+        }
+
         $this->pipeline[] = $middleware;
+        $this->chain      = null; // invalidate cache
     }
 
     /**
-     * Entry-point required by PSR-15.
-     *
-     * Middleware chain is reduced to nested anonymous RequestHandlers
-     * so that `$next->handle()` inside a middleware calls the remainder
-     * of the stack.
+     * Lock the pipeline — no more middleware can be added.
+     * Useful after boot to prevent accidental mutation.
+     */
+    public function lock(): void
+    {
+        $this->locked = true;
+    }
+
+    /**
+     * PSR-15 entry-point.
      */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        // Build the callable chain *backwards* (last-in-first-out)
-        $dispatcher = array_reduce(
-            array_reverse($this->pipeline),
-            static function (RequestHandlerInterface $next, MiddlewareInterface $mw): RequestHandlerInterface {
-                // anonymous RequestHandler decorating the next link
-                return new class($mw, $next) implements RequestHandlerInterface {
-                    public function __construct(
-                        private MiddlewareInterface   $mw,
-                        private RequestHandlerInterface $next
-                    ) {}
-
-                    public function handle(ServerRequestInterface $request): ResponseInterface
-                    {
-                        return $this->mw->process($request, $this->next);
-                    }
-                };
-            },
-            $this->appHandler             // the innermost / final handler
-        );
-
-        try {
-            return $dispatcher->handle($request);
-        } catch (\Throwable $e) {
-            // Let the global error handler deal with it (HttpBootstrap)
-            throw $e;
-            // // very plain fallback error handler – replace with your own
-            // $response = $this->responseFactory->createResponse(500);
-            // $response->getBody()->write('Internal Server Error');
-            // // You might log $e here …
-            // return $response;
+        if ($this->chain === null) {
+            $this->chain = $this->buildChain();
         }
+
+        return $this->chain->handle($request);
+    }
+
+    /**
+     * Build the middleware chain backwards (last-added = outermost).
+     */
+    private function buildChain(): RequestHandlerInterface
+    {
+        $handler = $this->appHandler;
+
+        foreach (array_reverse($this->pipeline) as $mw) {
+            $handler = new class($mw, $handler) implements RequestHandlerInterface {
+                public function __construct(
+                    private readonly MiddlewareInterface    $middleware,
+                    private readonly RequestHandlerInterface $next,
+                ) {}
+
+                public function handle(ServerRequestInterface $request): ResponseInterface
+                {
+                    return $this->middleware->process($request, $this->next);
+                }
+            };
+        }
+
+        return $handler;
     }
 }
