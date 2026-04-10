@@ -14,6 +14,22 @@ namespace MonkeysLegion\Http\Error\Renderer;
  */
 final class HtmlErrorRenderer implements ErrorRendererInterface
 {
+    public function __construct(
+        private Loader $loader,
+        private Renderer $renderer,
+        private ?ServerRequest $request = null,
+        private ?SessionManager $session = null
+    ) {
+        try {
+            if (!$this->request) {
+                $this->request = request();
+            }
+        } catch (\Throwable) {
+            $this->request = null;
+        }
+        $this->loader->addNamespace('errors', __DIR__ . '/../views');
+    }
+
     public function render(\Throwable $e, bool $debug = false): string
     {
         $errorType = $e::class;
@@ -85,15 +101,15 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
         return 'text/html';
     }
 
-    private function formatStackTrace(\Throwable $e): string
+    private function getTraceData(\Throwable $e): array
     {
-        $trace = '';
         $frames = $e->getTrace();
 
         if (empty($frames)) {
-            return '<div class="empty-state">No stack trace available</div>';
+            return [];
         }
 
+        $trace = [];
         foreach ($frames as $index => $frame) {
             $file = $frame['file'] ?? 'unknown';
             $line = $frame['line'] ?? 0;
@@ -101,50 +117,38 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
             $class = $frame['class'] ?? '';
             $type = $frame['type'] ?? '';
 
-            $location = htmlspecialchars($file, ENT_QUOTES, 'UTF-8') . ':' . $line;
-            $call = htmlspecialchars($class . $type . $function, ENT_QUOTES, 'UTF-8');
-
-            $trace .= "<div class=\"stack-item\">";
-            $trace .= "<div class=\"stack-file\">#{$index} {$location}</div>";
-            $trace .= "<div class=\"stack-function\">{$call}()</div>";
-            $trace .= "</div>";
+            $trace[] = [
+                'index' => $index,
+                'call' => $class . $type . $function,
+                'location' => $file . ':' . $line
+            ];
         }
 
         return $trace;
     }
 
-    private function getFileContext(string $file, int $errorLine): string
+    private function getFileContextLines(string $file, int $errorLine): array
     {
         if (!is_file($file) || !is_readable($file)) {
-            return '';
+            return [];
         }
 
         $lines = file($file, FILE_IGNORE_NEW_LINES);
         if ($lines === false) {
-            return '';
+            return [];
         }
 
         $start = max(0, $errorLine - 6);
         $end = min(count($lines), $errorLine + 5);
 
-        $context = '<div class="section">';
-        $context .= '<div class="section-title">Code Context</div>';
-        $context .= '<div class="code-context">';
-
+        $context = [];
         for ($i = $start; $i < $end; $i++) {
-            $lineNumber = $i + 1;
-            $codeLine = htmlspecialchars($lines[$i], ENT_QUOTES, 'UTF-8');
-            $isErrorLine = $lineNumber === $errorLine;
-            $class = $isErrorLine ? 'code-line highlight' : 'code-line';
-
-            $context .= "<div class=\"{$class}\">";
-            $context .= "<span class=\"line-number\">{$lineNumber}</span>";
-            $context .= "<span class=\"line-content\">{$codeLine}</span>";
-            $context .= "</div>";
+            $context[] = [
+                'number' => $i + 1,
+                'content' => $lines[$i],
+                'isError' => ($i + 1) === $errorLine
+            ];
         }
-
-        $context .= '</div>';
-        $context .= '</div>';
 
         return $context;
     }

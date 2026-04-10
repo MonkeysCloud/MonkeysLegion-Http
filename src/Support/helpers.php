@@ -15,6 +15,24 @@ use MonkeysLegion\Http\Message\JsonResponse;
 use MonkeysLegion\Http\Message\Response;
 use MonkeysLegion\Http\Message\Stream;
 use Psr\Http\Message\ResponseInterface;
+use MonkeysLegion\Http\Factory\HttpFactory;
+use Psr\Http\Message\ServerRequestInterface;
+
+if (!function_exists('request')) {
+    /**
+     * Get the current server request instance.
+     */
+    function request(): ServerRequestInterface
+    {
+        $request = HttpFactory::getGlobalRequest();
+
+        if ($request === null) {
+            throw new \RuntimeException("The global request has not been captured yet.");
+        }
+
+        return $request;
+    }
+}
 
 if (!function_exists('response')) {
     /**
