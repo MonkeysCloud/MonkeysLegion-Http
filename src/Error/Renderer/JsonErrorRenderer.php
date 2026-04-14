@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error\Renderer;
 
+use MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface;
 use Throwable;
 
 /**

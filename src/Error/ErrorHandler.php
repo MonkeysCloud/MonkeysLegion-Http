@@ -1,12 +1,14 @@
 <?php
 declare(strict_types=1);
 
-namespace MonkeysLegion\Http\Error;
+namespace MonkeysLegion\Core\Error;
 
 use ErrorException;
-use MonkeysLegion\Http\Error\Renderer\ErrorRendererInterface;
+use MonkeysLegion\Core\Error\Renderer\BasicHtmlErrorRenderer;
+use MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface;
 use MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer;
 use Psr\Log\LoggerInterface;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -20,6 +22,8 @@ use Throwable;
  *  • final class
  *  • Reserved 2 MB memory for fatal error handling
  *  • Infinite-loop guard via handling stack
+ *  • Nested failure-safe rendering fallback (HTML/JSON/plain text)
+ *  • Custom renderers via Core ErrorRendererInterface
  *
  * @copyright 2026 MonkeysCloud Team
  * @license   MIT
@@ -49,7 +53,7 @@ final class ErrorHandler
     }
 
     /**
-     * Set the error renderer.
+     * Set a custom error renderer implementing Core ErrorRendererInterface.
      */
     public function useRenderer(ErrorRendererInterface $renderer): void
     {
@@ -154,16 +158,29 @@ final class ErrorHandler
         $this->sendErrorHeaders();
 
         try {
-            echo $this->renderer->render($exception, $this->debug);
-        } catch (Throwable) {
-            $this->emergencyResponse('Error rendering failed', $exception);
-        }
+            $output = $this->renderer->render($exception, $this->debug);
+            echo $output;
+        } catch (Throwable $renderException) {
+            try {
+                [$fallbackContentType, $fallbackOutput] = $this->renderWithFallbackRenderer($exception, $renderException);
 
+                if (!headers_sent()) {
+                    header("Content-Type: {$fallbackContentType}; charset=UTF-8", true);
+                }
+
+                echo $fallbackOutput;
+            } catch (Throwable) {
+                $this->emergencyResponse('Error rendering failed', $exception, $renderException);
+            }
+        }
         if (PHP_SAPI !== 'cli' && !$this->debug) {
             exit(1);
         }
     }
 
+    /**
+     * Handles failures thrown while handling another throwable.
+     */
     private function handleNestedFailure(Throwable $original, Throwable $nested): void
     {
         try {
@@ -176,6 +193,120 @@ final class ErrorHandler
         }
 
         $this->emergencyResponse('Nested exception during error handling', $original, $nested);
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function renderWithFallbackRenderer(Throwable $exception, Throwable $renderException): array
+    {
+        $preferred = $this->resolvePreferredContentType();
+
+        if ($preferred === 'application/json') {
+            return ['application/json', $this->renderFallbackJson($exception, $renderException)];
+        }
+
+        if ($preferred === 'text/plain') {
+            return ['text/plain', $this->renderFallbackPlainText($exception, $renderException)];
+        }
+
+        return ['text/html', $this->renderFallbackHtml($exception, $renderException)];
+    }
+
+    private function resolvePreferredContentType(): string
+    {
+        try {
+            $contentType = $this->renderer->getContentType();
+        } catch (Throwable) {
+            $contentType = '';
+        }
+
+        if ($contentType !== '') {
+            return $contentType;
+        }
+
+        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+        if (str_contains($accept, 'application/json')) {
+            return 'application/json';
+        }
+        if (str_contains($accept, 'text/plain')) {
+            return 'text/plain';
+        }
+
+        return 'text/html';
+    }
+
+    private function renderFallbackHtml(Throwable $exception, Throwable $renderException): string
+    {
+        $output = (new BasicHtmlErrorRenderer())->render($exception, $this->debug);
+
+        if (!$this->debug) {
+            return $output;
+        }
+
+        $debugInfo = "\n<!-- Nested render exception -->\n";
+        $debugInfo .= "<div style=\"background: #b91c1c; color: white; padding: 1rem 2rem; position: relative; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-family: 'Inter', sans-serif;\">";
+        $debugInfo .= "<div style=\"max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.5rem;\">";
+        $debugInfo .= "<div style=\"display: flex; align-items: center; gap: 0.75rem;\">";
+        $debugInfo .= "<span style=\"background: rgba(255,255,255,0.2); padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;\">Renderer Failure</span>";
+        $debugInfo .= "<span style=\"font-weight: 600; font-size: 0.95rem;\">" . htmlspecialchars($renderException->getMessage(), ENT_QUOTES, 'UTF-8') . "</span>";
+        $debugInfo .= "</div>";
+        $debugInfo .= "<div style=\"font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; opacity: 0.8;\">";
+        $debugInfo .= "Occurred at " . htmlspecialchars($renderException->getFile(), ENT_QUOTES, 'UTF-8') . ":" . $renderException->getLine();
+        $debugInfo .= "</div></div></div>";
+
+        if (preg_match('/<body[^>]*>/i', $output, $matches, PREG_OFFSET_CAPTURE)) {
+            $insertPos = $matches[0][1] + strlen($matches[0][0]);
+            return substr($output, 0, $insertPos) . $debugInfo . substr($output, $insertPos);
+        }
+
+        return $debugInfo . $output;
+    }
+
+    private function renderFallbackPlainText(Throwable $exception, Throwable $renderException): string
+    {
+        $output = "Internal Server Error\n";
+        $output .= $this->debug ? ($exception->getMessage() . "\n") : "An unexpected error occurred.\n";
+
+        if ($this->debug) {
+            $output .= "Exception: " . $exception::class . "\n";
+            $output .= "At: " . $exception->getFile() . ':' . $exception->getLine() . "\n";
+            $output .= "Nested renderer exception: " . $renderException->getMessage() . "\n";
+            $output .= "Nested at: " . $renderException->getFile() . ':' . $renderException->getLine() . "\n";
+        }
+
+        return $output;
+    }
+
+    private function renderFallbackJson(Throwable $exception, Throwable $renderException): string
+    {
+        $payload = [
+            'error' => true,
+            'message' => $this->debug ? $exception->getMessage() : 'An unexpected error occurred.',
+            'timestamp' => date('c'),
+        ];
+
+        if ($this->debug) {
+            $payload['debug'] = [
+                'type' => $exception::class,
+                'file' => $exception->getFile(),
+                'line' => $exception->getLine(),
+                'trace' => $exception->getTrace(),
+                'nested_renderer_exception' => [
+                    'type' => $renderException::class,
+                    'message' => $renderException->getMessage(),
+                    'file' => $renderException->getFile(),
+                    'line' => $renderException->getLine(),
+                ],
+            ];
+        }
+
+        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($encoded === false) {
+            throw new RuntimeException('Unable to encode fallback JSON error response.');
+        }
+
+        return $encoded;
     }
 
     private function emergencyResponse(string $reason, Throwable $exception, ?Throwable $nested = null): void
@@ -282,13 +413,19 @@ final class ErrorHandler
      */
     private function exceptionToArray(Throwable $exception): array
     {
-        return [
-            'class'   => $exception::class,
+        $data = [
+            'class' => get_class($exception),
             'message' => $exception->getMessage(),
             'code'    => $exception->getCode(),
             'file'    => $exception->getFile(),
             'line'    => $exception->getLine(),
             'trace'   => $this->debug ? $exception->getTraceAsString() : '[hidden]',
         ];
+
+        if ($exception->getPrevious()) {
+            $data['previous'] = $this->exceptionToArray($exception->getPrevious());
+        }
+
+        return $data;
     }
 }

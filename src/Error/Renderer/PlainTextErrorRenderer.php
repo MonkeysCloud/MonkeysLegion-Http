@@ -6,30 +6,12 @@ namespace MonkeysLegion\Http\Error\Renderer;
 /**
  * MonkeysLegion Framework — HTTP Package
  *
- * Plain-text error renderer for CLI and API debugging.
+ * @deprecated 2.x Use \MonkeysLegion\Core\Error\Renderer\PlainTextErrorRenderer instead.
+ *             This legacy HTTP namespace alias will be removed in a future major release.
  *
  * @copyright 2026 MonkeysCloud Team
  * @license   MIT
  */
-final class PlainTextErrorRenderer implements ErrorRendererInterface
+final class PlainTextErrorRenderer extends \MonkeysLegion\Core\Error\Renderer\PlainTextErrorRenderer implements ErrorRendererInterface
 {
-    public function render(\Throwable $exception, bool $debug = false): string
-    {
-        $output = 'ERROR: ';
-        $output .= $debug ? $exception->getMessage() : 'An unexpected error occurred.';
-        $output .= "\n";
-
-        if ($debug) {
-            $output .= "\nException: " . $exception::class . "\n";
-            $output .= "File: {$exception->getFile()}:{$exception->getLine()}\n";
-            $output .= "\nStack Trace:\n" . $exception->getTraceAsString() . "\n";
-        }
-
-        return $output;
-    }
-
-    public function getContentType(): string
-    {
-        return 'text/plain';
-    }
 }

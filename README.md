@@ -202,14 +202,28 @@ $auth = new AuthMiddleware(
 Global error handler with OOM protection, recursive-exception guards, and PSR-3 logging:
 
 ```php
-use MonkeysLegion\Http\Error\ErrorHandler;
+use MonkeysLegion\Core\Error\ErrorHandler;
+use MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface;
 use MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer;
-use MonkeysLegion\Http\Error\Renderer\HtmlErrorRenderer;
+use MonkeysLegion\Core\Error\Renderer\HtmlErrorRenderer;
 
 $handler = new ErrorHandler();
-$handler->setRenderer(new JsonErrorRenderer(debug: false));
-$handler->setLogger($psrLogger);
+$handler->useRenderer(new JsonErrorRenderer());
+$handler->useLogger($psrLogger);
 $handler->register();
+
+// Custom renderer example:
+final class CustomErrorRenderer implements ErrorRendererInterface {
+    public function render(\Throwable $exception, bool $debug = false): string {
+        return 'Custom error output';
+    }
+
+    public function getContentType(): string {
+        return 'text/plain';
+    }
+}
+
+$handler->useRenderer(new CustomErrorRenderer());
 ```
 
 ### Error Renderers
@@ -218,7 +232,14 @@ $handler->register();
 |---|---|
 | `JsonErrorRenderer` | Structured JSON error response |
 | `HtmlErrorRenderer` | Styled HTML error page |
-| `PlainTextErrorRenderer` | Plain text error output |
+
+> Legacy HTTP namespace aliases are deprecated for these two types:
+> - `MonkeysLegion\Http\Error\Renderer\ErrorRendererInterface`
+> - `MonkeysLegion\Http\Error\Renderer\PlainTextErrorRenderer`
+>
+> Use Core namespace instead:
+> - `MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface`
+> - `MonkeysLegion\Core\Error\Renderer\PlainTextErrorRenderer`
 
 ## PSR-17 Factory
 
