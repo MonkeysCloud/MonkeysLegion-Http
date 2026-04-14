@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-namespace MonkeysLegion\Core\Error;
+namespace MonkeysLegion\Http\Error;
 
 use ErrorException;
-use MonkeysLegion\Core\Error\Renderer\BasicHtmlErrorRenderer;
 use MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface;
+use MonkeysLegion\Http\Error\Renderer\BasicHtmlErrorRenderer;
 use MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer;
 use Psr\Log\LoggerInterface;
 use RuntimeException;

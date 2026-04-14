@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace MonkeysLegion\Core\Error\Renderer;
+namespace MonkeysLegion\Http\Error\Renderer;
 
 use MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface;
 
