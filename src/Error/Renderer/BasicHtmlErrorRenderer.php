@@ -2,19 +2,57 @@
 
 declare(strict_types=1);
 
-namespace MonkeysLegion\Http\Error\Renderer;
+namespace MonkeysLegion\Core\Error\Renderer;
 
 class BasicHtmlErrorRenderer implements ErrorRendererInterface
 {
     public function render(\Throwable $e, bool $debug = false): string
     {
-        $errorType = get_class($e);
-        $message = htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
-        $file = htmlspecialchars($e->getFile(), ENT_QUOTES, 'UTF-8');
-        $line = $e->getLine();
-        $trace = $debug ? $this->formatStackTrace($e) : '';
-        $context = $debug ? $this->getFileContext($e->getFile(), $e->getLine()) : '';
+        $exceptions = [];
+        $current = $e;
+        while ($current !== null) {
+            $exceptions[] = $current;
+            $current = $current->getPrevious();
+        }
+
+        $exceptionId = $_GET['exception_index'] ?? 0;
+        $exceptionId = (int)$exceptionId;
+        if (!isset($exceptions[$exceptionId])) {
+            $exceptionId = 0;
+        }
+
+        $activeException = $exceptions[$exceptionId];
+        $errorType = get_class($activeException);
+        $message = htmlspecialchars($activeException->getMessage(), ENT_QUOTES, 'UTF-8');
+        $file = htmlspecialchars($activeException->getFile(), ENT_QUOTES, 'UTF-8');
+        $line = $activeException->getLine();
+        $trace = $debug ? $this->formatStackTrace($activeException) : '';
+        $context = $debug ? $this->getFileContext($activeException->getFile(), $activeException->getLine()) : '';
         $timestamp = date('Y-m-d H:i:s');
+
+        $chainHtml = '';
+        if ($debug && count($exceptions) > 1) {
+            $chainHtml = '<div class="exception-chain">';
+            $chainHtml .= '<div class="chain-label">Exception Chain:</div>';
+            $chainHtml .= '<div class="chain-items">';
+            foreach ($exceptions as $index => $exc) {
+                $isActive = $index === $exceptionId ? 'active' : '';
+                $shortName = (new \ReflectionClass($exc))->getShortName();
+                $chainHtml .= "<button class=\"chain-item {$isActive}\" onclick=\"switchException({$index})\">";
+                $chainHtml .= "<span class=\"chain-index\">#" . (count($exceptions) - $index) . "</span>";
+                $chainHtml .= "<span class=\"chain-type\">{$shortName}</span>";
+                $chainHtml .= "</button>";
+                if ($index < count($exceptions) - 1) {
+                    $chainHtml .= '<div class="chain-connector">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 17l5-5-5-5M6 17l5-5-5-5"></path>
+                        </svg>
+                    </div>';
+                }
+            }
+            $chainHtml .= '</div></div>';
+        }
+
         $details = $debug
             ? "<div class=\"error-meta\">
                         <div class=\"meta-item\">
@@ -23,7 +61,7 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
                         </div>
                         <div class=\"meta-item\">
                             <div class=\"meta-label\">Error Code</div>
-                            <div class=\"meta-value\">{$e->getCode()}</div>
+                            <div class=\"meta-value\">{$activeException->getCode()}</div>
                         </div>
                     </div>
                     <div class=\"error-details\">
@@ -110,6 +148,13 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
                                         icon.style.transform = 'rotate(-90deg)';
                                     }
                                 }
+
+                                function switchException(index) {
+                                    const url = new URL(window.location.href);
+                                    url.searchParams.set('exception_index', index);
+                                    window.location.href = url.toString();
+                                }
+
                                 // Copy code functionality
                                 document.addEventListener('click', function(e) {
                                     if (e.target.classList.contains('copy-btn')) {
@@ -134,6 +179,74 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
                     <link href=\"https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap\" rel=\"stylesheet\">
                     <style>
                       {$css}
+                      /* Nested Exception Styles */
+                      .exception-chain {
+                          margin-top: 1.5rem;
+                          display: flex;
+                          flex-direction: column;
+                          gap: 0.75rem;
+                          animation: fadeIn 0.8s ease-out 0.4s both;
+                      }
+                      .chain-label {
+                          font-size: 0.7rem;
+                          font-weight: 700;
+                          color: rgba(255, 255, 255, 0.6);
+                          text-transform: uppercase;
+                          letter-spacing: 0.12em;
+                      }
+                      .chain-items {
+                          display: flex;
+                          align-items: center;
+                          flex-wrap: wrap;
+                          gap: 0.5rem;
+                      }
+                      .chain-item {
+                          padding: 0.4rem 0.8rem;
+                          background: rgba(255, 255, 255, 0.1);
+                          border: 1px solid rgba(255, 255, 255, 0.2);
+                          border-radius: 8px;
+                          cursor: pointer;
+                          display: flex;
+                          align-items: center;
+                          gap: 0.5rem;
+                          transition: all 0.2s ease;
+                          font-family: 'Inter', sans-serif;
+                          color: rgba(255, 255, 255, 0.8);
+                          backdrop-filter: blur(4px);
+                      }
+                      .chain-item:hover {
+                          background: rgba(255, 255, 255, 0.2);
+                          border-color: var(--accent);
+                          transform: translateY(-1px);
+                          color: white;
+                      }
+                      .chain-item.active {
+                          background: var(--accent);
+                          border-color: var(--accent);
+                          color: white;
+                          font-weight: 600;
+                          box-shadow: 0 4px 12px rgba(224, 164, 88, 0.4);
+                      }
+                      .chain-index {
+                          font-family: 'JetBrains Mono', monospace;
+                          font-size: 0.75rem;
+                          opacity: 0.6;
+                      }
+                      .chain-item.active .chain-index {
+                          opacity: 1;
+                      }
+                      .chain-type {
+                          font-size: 0.85rem;
+                      }
+                      .chain-connector {
+                          color: rgba(255, 255, 255, 0.4);
+                          display: flex;
+                          align-items: center;
+                      }
+                      .chain-connector svg {
+                          width: 16px;
+                          height: 16px;
+                      }
                     </style>
                     </head>
                 <body>
@@ -146,7 +259,10 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
                                 </div>
                                 <div class=\"error-title-container\">
                                     <h1 class=\"error-title\">{$message}</h1>
-                                    <div class=\"error-type\">{$errorType}</div>
+                                    <div style=\"display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;\">
+                                        <div class=\"error-type\">{$errorType}</div>
+                                    </div>
+                                    {$chainHtml}
                                 </div>
                             </div>
                         </div>

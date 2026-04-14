@@ -467,9 +467,10 @@ body {
     line-height: 1.8;
     color: #94a3b8;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     padding: 0.4rem 0;
     transition: all var(--transition-fast);
+    min-width: max-content;
 }
 
 .code-line:hover {
@@ -489,7 +490,6 @@ body {
 
 .line-content {
     flex: 1;
-    overflow-x: auto;
     white-space: pre;
 }
 
@@ -501,6 +501,7 @@ body {
     color: #ffffff;
     border-radius: 0 8px 8px 0;
     position: relative;
+    padding-right: 2rem;
     animation: highlight 1s ease-out;
 }
 

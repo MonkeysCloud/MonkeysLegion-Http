@@ -2,101 +2,45 @@
 
 declare(strict_types=1);
 
-namespace MonkeysLegion\Http\Error\Renderer;
+namespace MonkeysLegion\Core\Error\Renderer;
 
-use MonkeysLegion\Http\Message\ServerRequest;
-use MonkeysLegion\Session\SessionManager;
-use MonkeysLegion\Template\Loader;
-use MonkeysLegion\Template\Renderer;
-
-class HtmlErrorRenderer implements ErrorRendererInterface
+class JsonErrorRenderer implements ErrorRendererInterface
 {
-    public function __construct(
-        private Loader $loader,
-        private Renderer $renderer,
-        private ?ServerRequest $request = null,
-        private ?SessionManager $session = null
-    ) {
-        try {
-            if (!$this->request) {
-                $this->request = request();
-            }
-        } catch (\Throwable) {
-            $this->request = null;
+    public function render(\Throwable $exception, bool $debug = false): string
+    {
+        $data = [
+            'error' => true,
+            'message' => $debug ? $exception->getMessage() : 'An unexpected error occurred.',
+            'timestamp' => date('c')
+        ];
+
+        if ($debug) {
+            $data['debug'] = $this->exceptionToArray($exception);
         }
-        $this->loader->addNamespace('errors', __DIR__ . '/../views');
+
+        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     }
 
-    public function render(\Throwable $e, bool $debug = false): string
+    private function exceptionToArray(\Throwable $e): array
     {
-        $css = file_get_contents(__DIR__ . '/../css/error.php');
+        $data = [
+            'type' => get_class($e),
+            'message' => $e->getMessage(),
+            'code' => $e->getCode(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => $e->getTrace()
+        ];
 
-        return $this->renderer->render('errors::exception', [
-            'e' => $e,
-            'debug' => $debug,
-            'timestamp' => date('Y-m-d H:i:s'),
-            'css' => $css,
-            'trace' => $debug ? $this->getTraceData($e) : [],
-            'context' => $debug ? $this->getFileContextLines($e->getFile(), $e->getLine()) : [],
-            'request' => $this->request,
-            'session' => $this->session
-        ]);
+        if ($e->getPrevious()) {
+            $data['previous'] = $this->exceptionToArray($e->getPrevious());
+        }
+
+        return $data;
     }
 
     public function getContentType(): string
     {
-        return 'text/html';
-    }
-
-    private function getTraceData(\Throwable $e): array
-    {
-        $frames = $e->getTrace();
-
-        if (empty($frames)) {
-            return [];
-        }
-
-        $trace = [];
-        foreach ($frames as $index => $frame) {
-            $file = $frame['file'] ?? 'unknown';
-            $line = $frame['line'] ?? 0;
-            $function = $frame['function'] ?? '';
-            $class = $frame['class'] ?? '';
-            $type = $frame['type'] ?? '';
-
-            $trace[] = [
-                'index' => $index,
-                'call' => $class . $type . $function,
-                'location' => $file . ':' . $line
-            ];
-        }
-
-        return $trace;
-    }
-
-    private function getFileContextLines(string $file, int $errorLine): array
-    {
-        if (!is_file($file) || !is_readable($file)) {
-            return [];
-        }
-
-        $lines = file($file, FILE_IGNORE_NEW_LINES);
-        if ($lines === false) {
-            return [];
-        }
-
-        $start = max(0, $errorLine - 6);
-        $end = min(count($lines), $errorLine + 5);
-
-        $context = [];
-        for ($i = $start; $i < $end; $i++) {
-            $context[] = [
-                'number' => $i + 1,
-                'content' => $lines[$i],
-                'isError' => ($i + 1) === $errorLine
-            ];
-        }
-
-        return $context;
+        return 'application/json';
     }
 }

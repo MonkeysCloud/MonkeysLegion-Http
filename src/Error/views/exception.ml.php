@@ -10,7 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        {!! $css !!}
+        {
+            ! ! $css ! !
+        }
 
         /* Custom styles for tabs and request details */
         .tabs {
@@ -183,6 +185,90 @@
         .data-table tr:last-child td {
             border-bottom: none;
         }
+
+        /* Nested Exception Styles */
+        .exception-chain {
+            margin-bottom: 2rem;
+            background: var(--surface-secondary);
+            border: 1.5px solid var(--border);
+            border-radius: 16px;
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .chain-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .chain-items {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .chain-item {
+            padding: 0.4rem 0.8rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+            font-family: 'Inter', sans-serif;
+            text-decoration: none;
+            color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(4px);
+        }
+
+        .chain-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: var(--accent);
+            transform: translateY(-1px);
+            color: white;
+        }
+
+        .chain-item.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(224, 164, 88, 0.4);
+        }
+
+        .chain-index {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            opacity: 0.6;
+        }
+
+        .chain-item.active .chain-index {
+            opacity: 1;
+        }
+
+        .chain-type {
+            font-size: 0.85rem;
+        }
+
+        .chain-connector {
+            color: rgba(255, 255, 255, 0.4);
+            display: flex;
+            align-items: center;
+        }
+
+        .chain-connector svg {
+            width: 16px;
+            height: 16px;
+        }
     </style>
 </head>
 
@@ -195,14 +281,40 @@
                     <div class="icon-glow"></div>
                 </div>
                 <div class="error-title-container">
-                    <h1 class="error-title">{{ $e->getMessage() ?: 'An error occurred' }}</h1>
-                    <div class="error-type">{{ get_class($e) }}</div>
+                    <h1 class="error-title">
+                        {{ $e->getMessage() ?: 'An unexpected error occurred' }}
+                    </h1>
+                    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                        <div class="error-type">{{ get_class($e) }}</div>
+                    </div>
+
+                    @if($debug && isset($exceptionChain) && count($exceptionChain) > 1)
+                    <div class="exception-chain">
+                        <div class="chain-label">Exception Chain:</div>
+                        <div class="chain-items">
+                            @foreach($exceptionChain as $item)
+                            <button class="chain-item {{ $item['isActive'] ? 'active' : '' }}" onclick="switchException({{ $item['index'] }})">
+                                <span class="chain-index">#{{ $item['number'] }}</span>
+                                <span class="chain-type">{{ $item['shortName'] }}</span>
+                            </button>
+                            @if(!$loop->last)
+                            <div class="chain-connector">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M13 17l5-5-5-5M6 17l5-5-5-5"></path>
+                                </svg>
+                            </div>
+                            @endif
+                            @endforeach
+                        </div>
+                    </div>
+                    @endif
                 </div>
             </div>
         </div>
 
         <div class="error-content">
             @if($debug)
+
             <div class="error-meta">
                 <div class="meta-item">
                     <div class="meta-label">Timestamp</div>
@@ -559,6 +671,12 @@
             container.querySelectorAll('.inner-tab-content').forEach(c => c.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(tabId).classList.add('active');
+        }
+
+        function switchException(index) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('exception_index', index);
+            window.location.href = url.toString();
         }
 
         // Copy code functionality
