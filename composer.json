@@ -11,10 +11,10 @@
     "guzzlehttp/psr7": "^2.7",
     "http-interop/http-factory-guzzle": "^1.2",
     "psr/simple-cache": "^3.0",
-    "monkeyscloud/monkeyslegion-logger": "^1.0",
-    "monkeyscloud/monkeyslegion-template": "^1.0",
-    "monkeyscloud/monkeyslegion-session": "^1.0",
-    "monkeyscloud/monkeyslegion-core": "^1.1",
+    "monkeyscloud/monkeyslegion-logger": "^2.0",
+    "monkeyscloud/monkeyslegion-template": "^2.0",
+    "monkeyscloud/monkeyslegion-session": "^2.0",
+    "monkeyscloud/monkeyslegion-core": "^2.0",
     "psr/http-factory": "^1.1"
   },
   "require-dev": {
