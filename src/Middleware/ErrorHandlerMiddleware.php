@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
 
-use MonkeysLegion\Http\Error\Renderer\ErrorRendererInterface;
+use MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface;
 use MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer;
 use MonkeysLegion\Http\Message\Response;
 use MonkeysLegion\Http\Message\Stream;
