@@ -15,7 +15,7 @@ use MonkeysLegion\Http\Message\JsonResponse;
 use MonkeysLegion\Http\Message\Response;
 use MonkeysLegion\Http\Message\Stream;
 use Psr\Http\Message\ResponseInterface;
-use MonkeysLegion\Http\Factory\HttpFactory;
+use MonkeysLegion\Http\Message\ServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 
 if (!function_exists('request')) {
@@ -24,7 +24,7 @@ if (!function_exists('request')) {
      */
     function request(): ServerRequestInterface
     {
-        $request = HttpFactory::getGlobalRequest();
+        $request = ServerRequest::fromGlobals();
 
         if ($request === null) {
             throw new \RuntimeException("The global request has not been captured yet.");
@@ -48,7 +48,7 @@ if (!function_exists('json')) {
     /**
      * Create a JSON response.
      *
-     * @throws JsonException
+     * @throws \JsonException
      */
     function json(mixed $data, int $status = 200): JsonResponse
     {
@@ -60,7 +60,7 @@ if (!function_exists('jsonSuccess')) {
     /**
      * Create a JSON success envelope response.
      *
-     * @throws JsonException
+     * @throws \JsonException
      */
     function jsonSuccess(mixed $data, ?string $message = null, int $status = 200): ResponseInterface
     {
