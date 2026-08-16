@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -25,13 +26,13 @@ final class TimingMiddleware implements MiddlewareInterface
         ServerRequestInterface $request,
         RequestHandlerInterface $handler,
     ): ResponseInterface {
-        $start    = hrtime(true);
+        $start    = \hrtime(true);
         $response = $handler->handle($request);
-        $elapsed  = (hrtime(true) - $start) / 1e6; // nanoseconds → milliseconds
+        $elapsed  = (\hrtime(true) - $start) / 1e6; // nanoseconds → milliseconds
 
         return $response->withHeader(
             'Server-Timing',
-            sprintf('total;dur=%.3f', $elapsed),
+            \sprintf('total;dur=%.3f', $elapsed),
         );
     }
 }

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -30,7 +31,8 @@ final class RequestIdMiddleware implements MiddlewareInterface
     public function __construct(
         private readonly string $headerName    = 'X-Request-Id',
         private readonly string $attributeName = 'request_id',
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -58,13 +60,13 @@ final class RequestIdMiddleware implements MiddlewareInterface
      */
     private static function uuid4(): string
     {
-        $bytes = random_bytes(16);
+        $bytes = \random_bytes(16);
         // Set version 4
-        $bytes[6] = chr(ord($bytes[6]) & 0x0f | 0x40);
+        $bytes[6] = \chr(\ord($bytes[6]) & 0x0f | 0x40);
         // Set variant 10
-        $bytes[8] = chr(ord($bytes[8]) & 0x3f | 0x80);
+        $bytes[8] = \chr(\ord($bytes[8]) & 0x3f | 0x80);
 
-        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
+        return \vsprintf('%s%s-%s-%s-%s-%s%s%s', \str_split(\bin2hex($bytes), 4));
     }
 
     /**
@@ -73,6 +75,6 @@ final class RequestIdMiddleware implements MiddlewareInterface
      */
     private static function isValidRequestId(string $id): bool
     {
-        return strlen($id) <= 200 && preg_match('/^[a-zA-Z0-9\-_.:]+$/', $id) === 1;
+        return \strlen($id) <= 200 && \preg_match('/^[a-zA-Z0-9\-_.:]+$/', $id) === 1;
     }
 }

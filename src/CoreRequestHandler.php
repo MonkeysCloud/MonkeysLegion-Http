@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http;
@@ -36,7 +37,8 @@ final class CoreRequestHandler implements RequestHandlerInterface
 
     public function __construct(
         private readonly RequestHandlerInterface $appHandler,
-    ) {}
+    ) {
+    }
 
     /**
      * Push a middleware to the end of the stack.
@@ -81,12 +83,13 @@ final class CoreRequestHandler implements RequestHandlerInterface
     {
         $handler = $this->appHandler;
 
-        foreach (array_reverse($this->pipeline) as $mw) {
-            $handler = new class($mw, $handler) implements RequestHandlerInterface {
+        foreach (\array_reverse($this->pipeline) as $mw) {
+            $handler = new class ($mw, $handler) implements RequestHandlerInterface {
                 public function __construct(
                     private readonly MiddlewareInterface    $middleware,
                     private readonly RequestHandlerInterface $next,
-                ) {}
+                ) {
+                }
 
                 public function handle(ServerRequestInterface $request): ResponseInterface
                 {

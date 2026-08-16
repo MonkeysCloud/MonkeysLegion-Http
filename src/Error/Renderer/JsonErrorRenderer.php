@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error\Renderer;
@@ -21,7 +22,7 @@ final class JsonErrorRenderer implements ErrorRendererInterface
         $data = [
             'status'    => 'error',
             'message'   => $debug ? $exception->getMessage() : 'An unexpected error occurred.',
-            'timestamp' => date('c'),
+            'timestamp' => \date('c'),
         ];
 
         if ($debug) {
@@ -33,7 +34,7 @@ final class JsonErrorRenderer implements ErrorRendererInterface
             ];
         }
 
-        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return \json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
     }
 
     public function getContentType(): string

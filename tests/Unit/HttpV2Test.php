@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Tests\Unit;
@@ -42,21 +43,58 @@ final class EchoHandler implements RequestHandlerInterface
 
 final class EchoBodyHandler implements RequestHandlerInterface
 {
-    public function __construct(private readonly string $body = 'Hello World') {}
+    public function __construct(private readonly string $body = 'Hello World')
+    {
+    }
 
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
         return Response::text($this->body);
     }
-}
-
-final class ThrowingHandler implements RequestHandlerInterface
+}final class ThrowingHandler implements RequestHandlerInterface
 {
-    public function __construct(private readonly \Throwable $exception) {}
+    public function __construct(private readonly \Throwable $exception)
+    {
+    }
 
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
         throw $this->exception;
+    }
+}
+
+/**
+ * No-op PSR-3 logger so tests never write to STDERR (Infection aborts the
+ * initial run on the first STDERR line).
+ */
+final class NullLogger implements \Psr\Log\LoggerInterface
+{
+    public function emergency(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function alert(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function critical(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function error(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function warning(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function notice(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function info(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function debug(\Stringable|string $message, array $context = []): void
+    {
+    }
+    public function log($level, \Stringable|string $message, array $context = []): void
+    {
     }
 }
 
@@ -195,7 +233,7 @@ final class HttpV2Test extends TestCase
         $r = Response::json(['key' => 'value']);
         $this->assertSame(200, $r->getStatusCode());
         $this->assertSame('application/json', $r->getHeaderLine('Content-Type'));
-        $data = json_decode((string) $r->getBody(), true);
+        $data = $this->decodeJson((string) $r->getBody());
         $this->assertSame('value', $data['key']);
     }
 
@@ -273,10 +311,11 @@ final class HttpV2Test extends TestCase
     {
         $r = new JsonResponse(['id' => 1, 'name' => 'Alice'], 200);
         $enveloped = $r->withEnvelope('User found');
-        $data = json_decode((string) $enveloped->getBody(), true);
+        $data = $this->decodeJson((string) $enveloped->getBody());
 
         $this->assertSame('success', $data['status']);
         $this->assertSame('User found', $data['message']);
+        $this->assertIsArray($data['data']);
         $this->assertSame(1, $data['data']['id']);
     }
 
@@ -285,8 +324,10 @@ final class HttpV2Test extends TestCase
     {
         $r = new JsonResponse([1, 2, 3], 200);
         $paginated = $r->withPagination(total: 100, page: 2, perPage: 25);
-        $data = json_decode((string) $paginated->getBody(), true);
+        $data = $this->decodeJson((string) $paginated->getBody());
 
+        $this->assertIsArray($data['meta']);
+        $this->assertIsArray($data['meta']['pagination']);
         $this->assertSame(100, $data['meta']['pagination']['total']);
         $this->assertSame(2, $data['meta']['pagination']['page']);
         $this->assertSame(4, $data['meta']['pagination']['last_page']);
@@ -298,7 +339,7 @@ final class HttpV2Test extends TestCase
     {
         $r = new JsonResponse(['errors' => ['field' => 'required']], 422);
         $enveloped = $r->withEnvelope('Validation failed');
-        $data = json_decode((string) $enveloped->getBody(), true);
+        $data = $this->decodeJson((string) $enveloped->getBody());
 
         $this->assertSame('error', $data['status']);
     }
@@ -461,6 +502,59 @@ final class HttpV2Test extends TestCase
         $this->assertSame('http://example.com', $response->getHeaderLine('Access-Control-Allow-Origin'));
     }
 
+    #[Test]
+    public function cors_wildcard_mixed_with_specific_origins(): void
+    {
+        $cors = new CorsMiddleware(allowedOrigins: ['https://api.example.com', '*']);
+
+        // Any origin is allowed when '*' is present anywhere in the list
+        $request = $this->makeRequest('GET', '/')
+            ->withHeader('Origin', 'https://evil.test');
+        $response = $cors->process($request, new EchoHandler());
+
+        $this->assertSame('*', $response->getHeaderLine('Access-Control-Allow-Origin'));
+    }
+
+    #[Test]
+    public function cors_subdomain_wildcard_pattern(): void
+    {
+        $cors = new CorsMiddleware(allowedOrigins: ['https://*.example.com']);
+
+        $request = $this->makeRequest('GET', '/')
+            ->withHeader('Origin', 'https://app.example.com');
+        $response = $cors->process($request, new EchoHandler());
+
+        $this->assertSame('https://app.example.com', $response->getHeaderLine('Access-Control-Allow-Origin'));
+    }
+
+    #[Test]
+    public function cors_subdomain_wildcard_rejects_other_domains(): void
+    {
+        $cors = new CorsMiddleware(allowedOrigins: ['https://*.example.com']);
+
+        $request = $this->makeRequest('GET', '/')
+            ->withHeader('Origin', 'https://evil.com');
+        $response = $cors->process($request, new EchoHandler());
+
+        $this->assertFalse($response->hasHeader('Access-Control-Allow-Origin'));
+    }
+
+    #[Test]
+    public function cors_wildcard_with_credentials_reflects_origin(): void
+    {
+        $cors = new CorsMiddleware(
+            allowedOrigins: ['*'],
+            allowCredentials: true,
+        );
+        $request = $this->makeRequest('GET', '/')
+            ->withHeader('Origin', 'https://app.example.com');
+        $response = $cors->process($request, new EchoHandler());
+
+        // '*' is not allowed with credentials — the specific origin is echoed instead
+        $this->assertSame('true', $response->getHeaderLine('Access-Control-Allow-Credentials'));
+        $this->assertSame('https://app.example.com', $response->getHeaderLine('Access-Control-Allow-Origin'));
+    }
+
     // ── SecurityHeaders Middleware ──────────────────────────────
 
     #[Test]
@@ -518,6 +612,17 @@ final class HttpV2Test extends TestCase
     {
         $mw = new RequestSizeLimitMiddleware(maxBytes: 10);
         $request = $this->makeRequest('POST', '/')->withHeader('Content-Length', '99999');
+        $response = $mw->process($request, new EchoHandler());
+
+        $this->assertSame(413, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function request_size_limit_rejects_by_actual_body_size(): void
+    {
+        $mw = new RequestSizeLimitMiddleware(maxBytes: 10);
+        $request = $this->makeRequest('POST', '/')
+            ->withBody(Stream::createFromString(\str_repeat('a', 100)));
         $response = $mw->process($request, new EchoHandler());
 
         $this->assertSame(413, $response->getStatusCode());
@@ -650,11 +755,11 @@ final class HttpV2Test extends TestCase
     public function trusted_proxy_resolves_forwarded_ip(): void
     {
         $mw = new TrustedProxyMiddleware(trustedProxies: ['127.0.0.1']);
-        $request = (new ServerRequest('GET', new Uri('/'), Stream::empty(), [], '1.1', ['REMOTE_ADDR' => '127.0.0.1']))
+        $request = new ServerRequest('GET', new Uri('/'), Stream::empty(), [], '1.1', ['REMOTE_ADDR' => '127.0.0.1'])
             ->withHeader('X-Forwarded-For', '203.0.113.50');
 
         // Use a handler that reads the attribute
-        $handler = new class implements RequestHandlerInterface {
+        $handler = new class () implements RequestHandlerInterface {
             public function handle(ServerRequestInterface $request): ResponseInterface
             {
                 return Response::json(['ip' => $request->getAttribute('client_ip')]);
@@ -662,7 +767,7 @@ final class HttpV2Test extends TestCase
         };
 
         $response = $mw->process($request, $handler);
-        $data = json_decode((string) $response->getBody(), true);
+        $data = $this->decodeJson((string) $response->getBody());
 
         $this->assertSame('203.0.113.50', $data['ip']);
     }
@@ -671,10 +776,10 @@ final class HttpV2Test extends TestCase
     public function trusted_proxy_ignores_untrusted(): void
     {
         $mw = new TrustedProxyMiddleware(trustedProxies: ['127.0.0.1']);
-        $request = (new ServerRequest('GET', new Uri('/'), Stream::empty(), [], '1.1', ['REMOTE_ADDR' => '10.0.0.5']))
+        $request = new ServerRequest('GET', new Uri('/'), Stream::empty(), [], '1.1', ['REMOTE_ADDR' => '10.0.0.5'])
             ->withHeader('X-Forwarded-For', '1.2.3.4');
 
-        $handler = new class implements RequestHandlerInterface {
+        $handler = new class () implements RequestHandlerInterface {
             public function handle(ServerRequestInterface $request): ResponseInterface
             {
                 return Response::json(['ip' => $request->getAttribute('client_ip')]);
@@ -682,7 +787,7 @@ final class HttpV2Test extends TestCase
         };
 
         $response = $mw->process($request, $handler);
-        $data = json_decode((string) $response->getBody(), true);
+        $data = $this->decodeJson((string) $response->getBody());
 
         // Should NOT trust X-Forwarded-For from untrusted proxy
         $this->assertSame('10.0.0.5', $data['ip']);
@@ -703,7 +808,7 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function csrf_validates_token_on_post(): void
     {
-        $token = bin2hex(random_bytes(32));
+        $token = \bin2hex(\random_bytes(32));
         $mw = new CsrfMiddleware(secureCookie: false);
 
         $request = $this->makeRequest('POST', '/', ['_csrf' => $token])
@@ -727,7 +832,7 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function csrf_accepts_header_token(): void
     {
-        $token = bin2hex(random_bytes(32));
+        $token = \bin2hex(\random_bytes(32));
         $mw = new CsrfMiddleware(secureCookie: false);
 
         $request = $this->makeRequest('POST', '/')
@@ -784,13 +889,13 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function auth_jwt_decoder_sets_uid(): void
     {
-        $decoder = fn(string $token) => $token === 'valid-jwt'
+        $decoder = fn (string $token) => $token === 'valid-jwt'
             ? ['sub' => 42, 'role' => 'admin']
             : false;
 
         $mw = new AuthMiddleware(publicPaths: [], jwtDecoder: $decoder);
 
-        $handler = new class implements RequestHandlerInterface {
+        $handler = new class () implements RequestHandlerInterface {
             public function handle(ServerRequestInterface $request): ResponseInterface
             {
                 return Response::json([
@@ -802,9 +907,10 @@ final class HttpV2Test extends TestCase
 
         $request = $this->makeRequest('GET', '/api')->withHeader('Authorization', 'Bearer valid-jwt');
         $response = $mw->process($request, $handler);
-        $data = json_decode((string) $response->getBody(), true);
+        $data = $this->decodeJson((string) $response->getBody());
 
         $this->assertSame(42, $data['uid']);
+        $this->assertIsArray($data['claims']);
         $this->assertSame('admin', $data['claims']['role']);
     }
 
@@ -913,7 +1019,7 @@ final class HttpV2Test extends TestCase
     {
         $renderer = new \MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer();
         $output = $renderer->render(new \RuntimeException('test error'), debug: true);
-        $data = json_decode($output, true);
+        $data = $this->decodeJson($output);
 
         $this->assertSame('error', $data['status']);
         $this->assertSame('test error', $data['message']);
@@ -925,7 +1031,7 @@ final class HttpV2Test extends TestCase
     {
         $renderer = new \MonkeysLegion\Http\Error\Renderer\JsonErrorRenderer();
         $output = $renderer->render(new \RuntimeException('test error'), debug: false);
-        $data = json_decode($output, true);
+        $data = $this->decodeJson($output);
 
         $this->assertSame('An unexpected error occurred.', $data['message']);
         $this->assertArrayNotHasKey('debug', $data);
@@ -953,8 +1059,8 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function response_download_validates_real_file(): void
     {
-        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
-        file_put_contents($tmpFile, 'test content');
+        $tmpFile = \tempnam(\sys_get_temp_dir(), 'test_');
+        \file_put_contents($tmpFile, 'test content');
 
         try {
             $response = Response::download($tmpFile);
@@ -963,15 +1069,15 @@ final class HttpV2Test extends TestCase
             $disposition = $response->getHeaderLine('Content-Disposition');
             $this->assertStringContains('attachment', $disposition);
         } finally {
-            unlink($tmpFile);
+            \unlink($tmpFile);
         }
     }
 
     #[Test]
     public function response_download_sanitizes_filename(): void
     {
-        $tmpFile = tempnam(sys_get_temp_dir(), 'test_');
-        file_put_contents($tmpFile, 'test content');
+        $tmpFile = \tempnam(\sys_get_temp_dir(), 'test_');
+        \file_put_contents($tmpFile, 'test content');
 
         try {
             $response = Response::download($tmpFile, "bad\x00file\nname.txt");
@@ -979,7 +1085,7 @@ final class HttpV2Test extends TestCase
             // Special characters should be replaced with underscores
             $this->assertStringContains('bad_file_name.txt', $disposition);
         } finally {
-            unlink($tmpFile);
+            \unlink($tmpFile);
         }
     }
 
@@ -988,13 +1094,13 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function error_handler_middleware_catches_exception(): void
     {
-        $mw = new ErrorHandlerMiddleware(debug: false);
+        $mw = new ErrorHandlerMiddleware(debug: false, logger: new NullLogger());
         $handler = new ThrowingHandler(new \RuntimeException('Something broke'));
 
         $response = $mw->process($this->makeRequest(), $handler);
 
         $this->assertSame(500, $response->getStatusCode());
-        $body = json_decode((string) $response->getBody(), true);
+        $body = $this->decodeJson((string) $response->getBody());
         $this->assertSame('error', $body['status']);
         $this->assertSame('An unexpected error occurred.', $body['message']);
     }
@@ -1002,13 +1108,13 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function error_handler_middleware_debug_mode(): void
     {
-        $mw = new ErrorHandlerMiddleware(debug: true);
+        $mw = new ErrorHandlerMiddleware(debug: true, logger: new NullLogger());
         $handler = new ThrowingHandler(new \RuntimeException('Debug error'));
 
         $response = $mw->process($this->makeRequest(), $handler);
 
         $this->assertSame(500, $response->getStatusCode());
-        $body = json_decode((string) $response->getBody(), true);
+        $body = $this->decodeJson((string) $response->getBody());
         $this->assertSame('Debug error', $body['message']);
         $this->assertArrayHasKey('debug', $body);
     }
@@ -1016,7 +1122,7 @@ final class HttpV2Test extends TestCase
     #[Test]
     public function error_handler_middleware_uses_exception_code(): void
     {
-        $mw = new ErrorHandlerMiddleware(debug: false);
+        $mw = new ErrorHandlerMiddleware(debug: false, logger: new NullLogger());
         $handler = new ThrowingHandler(new \RuntimeException('Not found', 404));
 
         $response = $mw->process($this->makeRequest(), $handler);
@@ -1032,6 +1138,35 @@ final class HttpV2Test extends TestCase
         $response = $mw->process($this->makeRequest(), new EchoHandler());
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    #[Test]
+    public function error_handler_middleware_uses_custom_renderer(): void
+    {
+        $renderer = new class () implements \MonkeysLegion\Core\Error\Renderer\ErrorRendererInterface {
+            public function render(\Throwable $exception, bool $debug = false): string
+            {
+                return 'custom-error-output';
+            }
+
+            public function getContentType(): string
+            {
+                return 'text/plain';
+            }
+        };
+
+        $mw = new ErrorHandlerMiddleware(
+            debug: false,
+            renderer: $renderer,
+            logger: new NullLogger(),
+        );
+        $handler = new ThrowingHandler(new \RuntimeException('Whatever'));
+
+        $response = $mw->process($this->makeRequest(), $handler);
+
+        $this->assertSame(500, $response->getStatusCode());
+        $this->assertSame('custom-error-output', (string) $response->getBody());
+        $this->assertSame('text/plain; charset=UTF-8', $response->getHeaderLine('Content-Type'));
     }
 
     // ── RequestId Validation ──────────────────────────────────
@@ -1113,8 +1248,11 @@ final class HttpV2Test extends TestCase
         );
 
         $capturedIp = null;
-        $handler = new class($capturedIp) implements RequestHandlerInterface {
-            public function __construct(private mixed &$ip) {}
+        $handler = new class ($capturedIp) implements RequestHandlerInterface {
+            /** @phpstan-ignore property.onlyWritten */
+            public function __construct(private mixed &$ip)
+            {
+            }
             public function handle(ServerRequestInterface $request): ResponseInterface
             {
                 $this->ip = $request->getAttribute('client_ip');
@@ -1153,22 +1291,45 @@ final class HttpV2Test extends TestCase
     public function logging_middleware_includes_response_size(): void
     {
         $loggedContext = null;
-        $logger = new class($loggedContext) implements \Psr\Log\LoggerInterface {
-            public function __construct(private mixed &$context) {}
-            public function emergency(\Stringable|string $message, array $context = []): void {}
-            public function alert(\Stringable|string $message, array $context = []): void {}
-            public function critical(\Stringable|string $message, array $context = []): void {}
-            public function error(\Stringable|string $message, array $context = []): void {}
-            public function warning(\Stringable|string $message, array $context = []): void {}
-            public function notice(\Stringable|string $message, array $context = []): void {}
-            public function info(\Stringable|string $message, array $context = []): void { $this->context = $context; }
-            public function debug(\Stringable|string $message, array $context = []): void {}
-            public function log($level, \Stringable|string $message, array $context = []): void {}
+        $logger = new class ($loggedContext) implements \Psr\Log\LoggerInterface {
+            /** @phpstan-ignore property.onlyWritten */
+            public function __construct(private mixed &$context)
+            {
+            }
+            public function emergency(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function alert(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function critical(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function error(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function warning(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function notice(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function info(\Stringable|string $message, array $context = []): void
+            {
+                $this->context = $context;
+            }
+            public function debug(\Stringable|string $message, array $context = []): void
+            {
+            }
+            public function log($level, \Stringable|string $message, array $context = []): void
+            {
+            }
         };
 
         $mw = new LoggingMiddleware($logger);
         $mw->process($this->makeRequest('GET', '/'), new EchoBodyHandler('Hello World'));
 
+        /** @var array<string, mixed> $loggedContext */
         $this->assertArrayHasKey('response_size', $loggedContext);
     }
 
@@ -1179,15 +1340,18 @@ final class HttpV2Test extends TestCase
     {
         // Verify that SimpleXMLElement with LIBXML_NONET produces valid XML
         // This tests the same construction used in ContentNegotiationMiddleware
-        $xml = new \SimpleXMLElement('<root/>', LIBXML_NONET);
+        $xml = new \SimpleXMLElement('<root/>', \LIBXML_NONET);
         $xml->addChild('test', 'value');
-        $output = $xml->asXML();
+        $output = $xml->asXML() ?: '';
         $this->assertStringContains('<test>value</test>', $output);
         $this->assertStringContains('<?xml', $output);
     }
 
     // ── Helpers ────────────────────────────────────────────────
 
+    /**
+     * @param array<string, mixed>|null $parsedBody
+     */
     private function makeRequest(
         string $method = 'GET',
         string $path = '/',
@@ -1210,8 +1374,24 @@ final class HttpV2Test extends TestCase
     private static function assertStringContains(string $needle, string $haystack): void
     {
         self::assertTrue(
-            str_contains($haystack, $needle),
-            sprintf('Failed asserting that "%s" contains "%s".', $haystack, $needle),
+            \str_contains($haystack, $needle),
+            \sprintf('Failed asserting that "%s" contains "%s".', $haystack, $needle),
         );
+    }
+
+    /**
+     * Decode a JSON response body into an array.
+     *
+     * @return array<string, mixed>
+     */
+    private static function decodeJson(string $body): array
+    {
+        $data = \json_decode($body, true);
+        if (!\is_array($data)) {
+            throw new \RuntimeException('Failed to decode JSON in test: ' . $body);
+        }
+
+        /** @var array<string, mixed> $data */
+        return $data;
     }
 }

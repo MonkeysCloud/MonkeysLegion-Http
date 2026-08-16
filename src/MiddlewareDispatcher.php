@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http;
@@ -25,12 +26,12 @@ final class MiddlewareDispatcher implements RequestHandlerInterface
 
     /**
      * @param list<MiddlewareInterface>   $middlewareStack
-     * @param RequestHandlerInterface     $finalHandler
      */
     public function __construct(
         private readonly array                   $middlewareStack,
         private readonly RequestHandlerInterface $finalHandler,
-    ) {}
+    ) {
+    }
 
     public function handle(ServerRequestInterface $request): ResponseInterface
     {

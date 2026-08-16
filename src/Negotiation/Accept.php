@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Negotiation;
@@ -24,23 +25,23 @@ final class Accept
             return ['*/*'];
         }
 
-        $parts = array_map('trim', explode(',', $header));
+        $parts = \array_map('trim', \explode(',', $header));
         $items = [];
 
         foreach ($parts as $p) {
-            if (!str_contains($p, ';')) {
+            if (!\str_contains($p, ';')) {
                 $items[$p] = 1.0;
                 continue;
             }
-            [$mime, $params] = array_map('trim', explode(';', $p, 2));
-            if (preg_match('/q=([0-9.]+)/', $params, $m)) {
+            [$mime, $params] = \array_map('trim', \explode(';', $p, 2));
+            if (\preg_match('/q=([0-9.]+)/', $params, $m)) {
                 $items[$mime] = (float) $m[1];
             } else {
                 $items[$mime] = 1.0;
             }
         }
 
-        arsort($items, SORT_NUMERIC);
-        return array_keys($items);
+        \arsort($items, \SORT_NUMERIC);
+        return \array_keys($items);
     }
 }

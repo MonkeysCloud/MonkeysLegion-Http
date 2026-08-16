@@ -17,34 +17,33 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
             $current = $current->getPrevious();
         }
 
-        $exceptionId = $_GET['exception_index'] ?? 0;
-        $exceptionId = (int)$exceptionId;
+        $exceptionId = \filter_var($_GET['exception_index'] ?? 0, \FILTER_VALIDATE_INT) ?: 0;
         if (!isset($exceptions[$exceptionId])) {
             $exceptionId = 0;
         }
 
         $activeException = $exceptions[$exceptionId];
-        $errorType = get_class($activeException);
-        $message = htmlspecialchars($activeException->getMessage(), ENT_QUOTES, 'UTF-8');
-        $file = htmlspecialchars($activeException->getFile(), ENT_QUOTES, 'UTF-8');
+        $errorType = \get_class($activeException);
+        $message = \htmlspecialchars($activeException->getMessage(), \ENT_QUOTES, 'UTF-8');
+        $file = \htmlspecialchars($activeException->getFile(), \ENT_QUOTES, 'UTF-8');
         $line = $activeException->getLine();
         $trace = $debug ? $this->formatStackTrace($activeException) : '';
         $context = $debug ? $this->getFileContext($activeException->getFile(), $activeException->getLine()) : '';
-        $timestamp = date('Y-m-d H:i:s');
+        $timestamp = \date('Y-m-d H:i:s');
 
         $chainHtml = '';
-        if ($debug && count($exceptions) > 1) {
+        if ($debug && \count($exceptions) > 1) {
             $chainHtml = '<div class="exception-chain">';
             $chainHtml .= '<div class="chain-label">Exception Chain:</div>';
             $chainHtml .= '<div class="chain-items">';
             foreach ($exceptions as $index => $exc) {
                 $isActive = $index === $exceptionId ? 'active' : '';
-                $shortName = (new \ReflectionClass($exc))->getShortName();
+                $shortName = new \ReflectionClass($exc)->getShortName();
                 $chainHtml .= "<button class=\"chain-item {$isActive}\" onclick=\"switchException({$index})\">";
-                $chainHtml .= "<span class=\"chain-index\">#" . (count($exceptions) - $index) . "</span>";
+                $chainHtml .= '<span class="chain-index">#' . (\count($exceptions) - $index) . '</span>';
                 $chainHtml .= "<span class=\"chain-type\">{$shortName}</span>";
-                $chainHtml .= "</button>";
-                if ($index < count($exceptions) - 1) {
+                $chainHtml .= '</button>';
+                if ($index < \count($exceptions) - 1) {
                     $chainHtml .= '<div class="chain-connector">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M13 17l5-5-5-5M6 17l5-5-5-5"></path>
@@ -104,36 +103,36 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
                         {$trace}
                     </div>
                 </div>"
-            : "<div class=\"error-message-container\">
-                    <div class=\"error-illustration\">
-                        <svg viewBox=\"0 0 200 200\" xmlns=\"http://www.w3.org/2000/svg\">
-                            <circle cx=\"100\" cy=\"100\" r=\"80\" fill=\"#fee2e2\" opacity=\"0.3\"/>
-                            <circle cx=\"100\" cy=\"100\" r=\"60\" fill=\"#fecaca\" opacity=\"0.4\"/>
-                            <path d=\"M100 60 L100 110\" stroke=\"#b91c1c\" stroke-width=\"8\" stroke-linecap=\"round\"/>
-                            <circle cx=\"100\" cy=\"130\" r=\"6\" fill=\"#b91c1c\"/>
+            : '<div class="error-message-container">
+                    <div class="error-illustration">
+                        <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="100" cy="100" r="80" fill="#fee2e2" opacity="0.3"/>
+                            <circle cx="100" cy="100" r="60" fill="#fecaca" opacity="0.4"/>
+                            <path d="M100 60 L100 110" stroke="#b91c1c" stroke-width="8" stroke-linecap="round"/>
+                            <circle cx="100" cy="130" r="6" fill="#b91c1c"/>
                         </svg>
                     </div>
-                    <h2 class=\"error-message-title\">Oops! Something went wrong</h2>
-                    <p class=\"error-message-text\">An internal server error occurred.</p>
-                    <div class=\"error-actions\">
-                        <button class=\"action-btn primary\" onclick=\"window.location.reload()\">
-                            <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\">
-                                <path d=\"M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15\"></path>
+                    <h2 class="error-message-title">Oops! Something went wrong</h2>
+                    <p class="error-message-text">An internal server error occurred.</p>
+                    <div class="error-actions">
+                        <button class="action-btn primary" onclick="window.location.reload()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                             </svg>
                             Try Again
                         </button>
-                        <button class=\"action-btn secondary\" onclick=\"window.history.back()\">
-                            <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\">
-                                <path d=\"M10 19l-7-7m0 0l7-7m-7 7h18\"></path>
+                        <button class="action-btn secondary" onclick="window.history.back()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
                             </svg>
                             Go Back
                         </button>
                     </div>
-                </div>";
+                </div>';
 
-        ob_start();
+        \ob_start();
         require __DIR__ . '/../css/error.php';
-        $css = ob_get_clean();
+        $css = \ob_get_clean();
         $scripts = $debug ? "<script>
                                 function toggleStackTrace() {
                                     const trace = document.getElementById('stackTrace');
@@ -167,7 +166,7 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
                                         });
                                     }
                                 });
-                            </script>" : "";
+                            </script>" : '';
 
         return "<!DOCTYPE html>
                 <html lang=\"en\">
@@ -311,16 +310,16 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
             $class = $frame['class'] ?? '';
             $type = $frame['type'] ?? '';
 
-            $location = htmlspecialchars($file, ENT_QUOTES, 'UTF-8') . ':' . $line;
-            $call = htmlspecialchars($class . $type . $function, ENT_QUOTES, 'UTF-8');
+            $location = \htmlspecialchars($file, \ENT_QUOTES, 'UTF-8') . ':' . $line;
+            $call = \htmlspecialchars($class . $type . $function, \ENT_QUOTES, 'UTF-8');
 
-            $trace .= "<div class=\"stack-item\">";
-            $trace .= "<div class=\"stack-number\">#" . $index . "</div>";
-            $trace .= "<div class=\"stack-info\">";
+            $trace .= '<div class="stack-item">';
+            $trace .= '<div class="stack-number">#' . $index . '</div>';
+            $trace .= '<div class="stack-info">';
             $trace .= "<div class=\"stack-function\">{$call}()</div>";
             $trace .= "<div class=\"stack-file\">{$location}</div>";
-            $trace .= "</div>";
-            $trace .= "</div>";
+            $trace .= '</div>';
+            $trace .= '</div>';
         }
 
         return $trace;
@@ -328,17 +327,17 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
 
     private function getFileContext(string $file, int $errorLine): string
     {
-        if (!is_file($file) || !is_readable($file)) {
+        if (!\is_file($file) || !\is_readable($file)) {
             return '';
         }
 
-        $lines = file($file, FILE_IGNORE_NEW_LINES);
+        $lines = \file($file, \FILE_IGNORE_NEW_LINES);
         if ($lines === false) {
             return '';
         }
 
-        $start = max(0, $errorLine - 6);
-        $end = min(count($lines), $errorLine + 5);
+        $start = \max(0, $errorLine - 6);
+        $end = \min(\count($lines), $errorLine + 5);
 
         $context = '<div class="section">';
         $context .= '<div class="section-header">';
@@ -353,7 +352,7 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
 
         for ($i = $start; $i < $end; $i++) {
             $lineNumber = $i + 1;
-            $codeLine = htmlspecialchars($lines[$i], ENT_QUOTES, 'UTF-8');
+            $codeLine = \htmlspecialchars($lines[$i], \ENT_QUOTES, 'UTF-8');
             $isErrorLine = $lineNumber === $errorLine;
             $class = $isErrorLine ? 'code-line highlight' : 'code-line';
 
@@ -361,9 +360,9 @@ class BasicHtmlErrorRenderer implements ErrorRendererInterface
             $context .= "<span class=\"line-number\">{$lineNumber}</span>";
             $context .= "<span class=\"line-content\">{$codeLine}</span>";
             if ($isErrorLine) {
-                $context .= "<span class=\"error-marker\">← Error occurred here</span>";
+                $context .= '<span class="error-marker">← Error occurred here</span>';
             }
-            $context .= "</div>";
+            $context .= '</div>';
         }
 
         $context .= '</div>';

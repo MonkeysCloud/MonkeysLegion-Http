@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Emitter;
@@ -26,7 +27,8 @@ final class SapiEmitter
      */
     public function __construct(
         private readonly int $chunkSize = 8192,
-    ) {}
+    ) {
+    }
 
     /**
      * Emit the response to the client.
@@ -35,8 +37,8 @@ final class SapiEmitter
      */
     public function emit(ResponseInterface $response): void
     {
-        if (headers_sent($file, $line)) {
-            throw new RuntimeException(sprintf(
+        if (\headers_sent($file, $line)) {
+            throw new RuntimeException(\sprintf(
                 'Headers already sent in %s on line %d. Cannot emit response.',
                 $file,
                 $line,
@@ -54,19 +56,19 @@ final class SapiEmitter
         $protocol = $response->getProtocolVersion();
         $status   = $response->getStatusCode();
         $reason   = $response->getReasonPhrase();
-        header(sprintf('HTTP/%s %d %s', $protocol, $status, $reason), true, $status);
+        \header(\sprintf('HTTP/%s %d %s', $protocol, $status, $reason), true, $status);
 
         // 2) Headers
         foreach ($response->getHeaders() as $name => $values) {
             $replace = true;
             foreach ($values as $value) {
-                header(sprintf('%s: %s', $name, $value), $replace);
+                \header(\sprintf('%s: %s', $name, $value), $replace);
                 $replace = false; // only replace first occurrence
             }
         }
 
         // 3) Body — skip for 204/304
-        if (in_array($status, [204, 304], true)) {
+        if (\in_array($status, [204, 304], true)) {
             return;
         }
 
@@ -77,7 +79,7 @@ final class SapiEmitter
         while (!$body->eof()) {
             echo $body->read($this->chunkSize);
 
-            if (connection_status() !== CONNECTION_NORMAL) {
+            if (\connection_status() !== \CONNECTION_NORMAL) {
                 break;
             }
         }

@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 /**
@@ -13,30 +14,26 @@ declare(strict_types=1);
 
 use MonkeysLegion\Http\Message\JsonResponse;
 use MonkeysLegion\Http\Message\Response;
+use MonkeysLegion\Http\Message\ServerRequest;
 use MonkeysLegion\Http\Message\Stream;
 use Psr\Http\Message\ResponseInterface;
-use MonkeysLegion\Http\Message\ServerRequest;
 use Psr\Http\Message\ServerRequestInterface;
 
-if (!function_exists('request')) {
+if (!\function_exists('request')) {
     /**
      * Get the current server request instance.
      */
     function request(): ServerRequestInterface
     {
-        $request = ServerRequest::fromGlobals();
-
-        if ($request === null) {
-            throw new \RuntimeException("The global request has not been captured yet.");
-        }
-
-        return $request;
+        return ServerRequest::fromGlobals();
     }
 }
 
-if (!function_exists('response')) {
+if (!\function_exists('response')) {
     /**
      * Create a plain-text response.
+     *
+     * @param array<string, mixed> $headers
      */
     function response(string $data = '', int $status = 200, array $headers = []): ResponseInterface
     {
@@ -44,7 +41,7 @@ if (!function_exists('response')) {
     }
 }
 
-if (!function_exists('json')) {
+if (!\function_exists('json')) {
     /**
      * Create a JSON response.
      *
@@ -56,7 +53,17 @@ if (!function_exists('json')) {
     }
 }
 
-if (!function_exists('jsonSuccess')) {
+if (!\function_exists('html')) {
+    /**
+     * Create an HTML response.
+     */
+    function html(string $content, int $status = 200): ResponseInterface
+    {
+        return Response::html($content, $status);
+    }
+}
+
+if (!\function_exists('jsonSuccess')) {
     /**
      * Create a JSON success envelope response.
      *
@@ -64,20 +71,20 @@ if (!function_exists('jsonSuccess')) {
      */
     function jsonSuccess(mixed $data, ?string $message = null, int $status = 200): ResponseInterface
     {
-        return (new JsonResponse($data, $status))->withEnvelope($message);
+        return new JsonResponse($data, $status)->withEnvelope($message);
     }
 }
 
-if (!function_exists('jsonError')) {
+if (!\function_exists('jsonError')) {
     /**
      * Create a JSON error response.
      */
     function jsonError(string $message, int $status = 400): ResponseInterface
     {
-        $payload = json_encode([
+        $payload = \json_encode([
             'status'  => 'error',
             'message' => $message,
-        ], JSON_UNESCAPED_SLASHES);
+        ], \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
         return new Response(
             Stream::createFromString($payload),
@@ -87,112 +94,112 @@ if (!function_exists('jsonError')) {
     }
 }
 
-if (!function_exists('ok')) {
+if (!\function_exists('ok')) {
     function ok(string $data = 'OK'): ResponseInterface
     {
-        return response($data, 200);
+        return \response($data, 200);
     }
 }
 
-if (!function_exists('created')) {
+if (!\function_exists('created')) {
     function created(string $data = 'Created'): ResponseInterface
     {
-        return response($data, 201);
+        return \response($data, 201);
     }
 }
 
-if (!function_exists('accepted')) {
+if (!\function_exists('accepted')) {
     function accepted(string $data = 'Accepted'): ResponseInterface
     {
-        return response($data, 202);
+        return \response($data, 202);
     }
 }
 
-if (!function_exists('noContent')) {
+if (!\function_exists('noContent')) {
     function noContent(): ResponseInterface
     {
         return Response::noContent();
     }
 }
 
-if (!function_exists('badRequest')) {
+if (!\function_exists('badRequest')) {
     function badRequest(string $data = 'Bad Request'): ResponseInterface
     {
-        return response($data, 400);
+        return \response($data, 400);
     }
 }
 
-if (!function_exists('unauthorized')) {
+if (!\function_exists('unauthorized')) {
     function unauthorized(string $data = 'Unauthorized'): ResponseInterface
     {
-        return response($data, 401);
+        return \response($data, 401);
     }
 }
 
-if (!function_exists('forbidden')) {
+if (!\function_exists('forbidden')) {
     function forbidden(string $data = 'Forbidden'): ResponseInterface
     {
-        return response($data, 403);
+        return \response($data, 403);
     }
 }
 
-if (!function_exists('notFound')) {
+if (!\function_exists('notFound')) {
     function notFound(string $data = 'Not Found'): ResponseInterface
     {
-        return response($data, 404);
+        return \response($data, 404);
     }
 }
 
-if (!function_exists('methodNotAllowed')) {
+if (!\function_exists('methodNotAllowed')) {
     function methodNotAllowed(string $data = 'Method Not Allowed'): ResponseInterface
     {
-        return response($data, 405);
+        return \response($data, 405);
     }
 }
 
-if (!function_exists('conflict')) {
+if (!\function_exists('conflict')) {
     function conflict(string $data = 'Conflict'): ResponseInterface
     {
-        return response($data, 409);
+        return \response($data, 409);
     }
 }
 
-if (!function_exists('unprocessableEntity')) {
+if (!\function_exists('unprocessableEntity')) {
     function unprocessableEntity(string $data = 'Unprocessable Entity'): ResponseInterface
     {
-        return response($data, 422);
+        return \response($data, 422);
     }
 }
 
-if (!function_exists('internalServerError')) {
+if (!\function_exists('internalServerError')) {
     function internalServerError(string $data = 'Internal Server Error'): ResponseInterface
     {
-        return response($data, 500);
+        return \response($data, 500);
     }
 }
 
-if (!function_exists('notImplemented')) {
+if (!\function_exists('notImplemented')) {
     function notImplemented(string $data = 'Not Implemented'): ResponseInterface
     {
-        return response($data, 501);
+        return \response($data, 501);
     }
 }
 
-if (!function_exists('serviceUnavailable')) {
+if (!\function_exists('serviceUnavailable')) {
     function serviceUnavailable(string $data = 'Service Unavailable'): ResponseInterface
     {
-        return response($data, 503);
+        return \response($data, 503);
     }
 }
 
-if (!function_exists('redirect')) {
+if (!\function_exists('redirect')) {
     function redirect(string $url, int $status = 302): ResponseInterface
     {
         return Response::redirect($url, $status);
     }
 }
 
-if (!function_exists('permanentRedirect')) {
+if (!\function_exists('permanentRedirect')) {
     function permanentRedirect(string $url): ResponseInterface
     {
         return Response::redirect($url, 301);

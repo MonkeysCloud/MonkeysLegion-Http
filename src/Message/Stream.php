@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -33,7 +34,7 @@ final class Stream implements StreamInterface
      */
     public function __construct($resource)
     {
-        if (!is_resource($resource)) {
+        if (!\is_resource($resource)) {
             throw new InvalidArgumentException('Stream requires a valid PHP resource.');
         }
         $this->resource = $resource;
@@ -46,10 +47,13 @@ final class Stream implements StreamInterface
      */
     public static function createFromString(string $content = ''): self
     {
-        $handle = fopen('php://temp', 'r+');
+        $handle = \fopen('php://temp', 'r+');
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open php://temp stream.');
+        }
         if ($content !== '') {
-            fwrite($handle, $content);
-            rewind($handle);
+            \fwrite($handle, $content);
+            \rewind($handle);
         }
         return new self($handle);
     }
@@ -61,9 +65,9 @@ final class Stream implements StreamInterface
      */
     public static function createFromFile(string $path, string $mode = 'rb'): self
     {
-        $handle = @fopen($path, $mode);
+        $handle = @\fopen($path, $mode);
         if ($handle === false) {
-            throw new RuntimeException(sprintf('Cannot open file "%s" with mode "%s".', $path, $mode));
+            throw new RuntimeException(\sprintf('Cannot open file "%s" with mode "%s".', $path, $mode));
         }
         return new self($handle);
     }
@@ -73,7 +77,11 @@ final class Stream implements StreamInterface
      */
     public static function empty(): self
     {
-        return new self(fopen('php://temp', 'r+'));
+        $handle = \fopen('php://temp', 'r+');
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open php://temp stream.');
+        }
+        return new self($handle);
     }
 
     // ── StreamInterface ────────────────────────────────────────
@@ -92,8 +100,8 @@ final class Stream implements StreamInterface
     /** {@inheritDoc} */
     public function close(): void
     {
-        if (is_resource($this->resource)) {
-            fclose($this->resource);
+        if (\is_resource($this->resource)) {
+            \fclose($this->resource);
         }
         $this->resource = null;
     }
@@ -112,7 +120,7 @@ final class Stream implements StreamInterface
         if ($this->resource === null) {
             return null;
         }
-        $stats = fstat($this->resource);
+        $stats = \fstat($this->resource);
         return $stats['size'] ?? null;
     }
 
@@ -120,7 +128,7 @@ final class Stream implements StreamInterface
     public function tell(): int
     {
         $this->guardDetached();
-        $pos = ftell($this->resource);
+        $pos = \ftell($this->resource);
         if ($pos === false) {
             throw new RuntimeException('Unable to determine stream position.');
         }
@@ -130,7 +138,7 @@ final class Stream implements StreamInterface
     /** {@inheritDoc} */
     public function eof(): bool
     {
-        return $this->resource === null || feof($this->resource);
+        return $this->resource === null || \feof($this->resource);
     }
 
     /** {@inheritDoc} */
@@ -139,15 +147,15 @@ final class Stream implements StreamInterface
         if ($this->resource === null) {
             return false;
         }
-        $meta = stream_get_meta_data($this->resource);
-        return $meta['seekable'] ?? false;
+        $meta = \stream_get_meta_data($this->resource);
+        return $meta['seekable'];
     }
 
     /** {@inheritDoc} */
-    public function seek($offset, $whence = SEEK_SET): void
+    public function seek($offset, $whence = \SEEK_SET): void
     {
         $this->guardDetached();
-        if (!$this->isSeekable() || fseek($this->resource, $offset, $whence) === -1) {
+        if (!$this->isSeekable() || \fseek($this->resource, $offset, $whence) === -1) {
             throw new RuntimeException('Unable to seek in stream.');
         }
     }
@@ -164,8 +172,8 @@ final class Stream implements StreamInterface
         if ($this->resource === null) {
             return false;
         }
-        $mode = stream_get_meta_data($this->resource)['mode'] ?? '';
-        return str_contains($mode, 'w') || str_contains($mode, '+') || str_contains($mode, 'a') || str_contains($mode, 'x') || str_contains($mode, 'c');
+        $mode = \stream_get_meta_data($this->resource)['mode'];
+        return \str_contains($mode, 'w') || \str_contains($mode, '+') || \str_contains($mode, 'a') || \str_contains($mode, 'x') || \str_contains($mode, 'c');
     }
 
     /** {@inheritDoc} */
@@ -175,7 +183,7 @@ final class Stream implements StreamInterface
         if (!$this->isWritable()) {
             throw new RuntimeException('Stream is not writable.');
         }
-        $bytes = fwrite($this->resource, $string);
+        $bytes = \fwrite($this->resource, $string);
         if ($bytes === false) {
             throw new RuntimeException('Unable to write to stream.');
         }
@@ -188,8 +196,8 @@ final class Stream implements StreamInterface
         if ($this->resource === null) {
             return false;
         }
-        $mode = stream_get_meta_data($this->resource)['mode'] ?? '';
-        return str_contains($mode, 'r') || str_contains($mode, '+');
+        $mode = \stream_get_meta_data($this->resource)['mode'];
+        return \str_contains($mode, 'r') || \str_contains($mode, '+');
     }
 
     /** {@inheritDoc} */
@@ -202,7 +210,8 @@ final class Stream implements StreamInterface
         if (!$this->isReadable()) {
             throw new RuntimeException('Stream is not readable.');
         }
-        $data = fread($this->resource, $length);
+        // fread() with length 0 is a no-op and would violate fread's int<1, max> contract.
+        $data = $length > 0 ? \fread($this->resource, $length) : '';
         if ($data === false) {
             throw new RuntimeException('Unable to read from stream.');
         }
@@ -213,7 +222,7 @@ final class Stream implements StreamInterface
     public function getContents(): string
     {
         $this->guardDetached();
-        $contents = stream_get_contents($this->resource);
+        $contents = \stream_get_contents($this->resource);
         if ($contents === false) {
             throw new RuntimeException('Unable to read stream contents.');
         }
@@ -226,7 +235,7 @@ final class Stream implements StreamInterface
         if ($this->resource === null) {
             return $key === null ? [] : null;
         }
-        $meta = stream_get_meta_data($this->resource);
+        $meta = \stream_get_meta_data($this->resource);
         return $key === null ? $meta : ($meta[$key] ?? null);
     }
 
@@ -234,6 +243,8 @@ final class Stream implements StreamInterface
 
     /**
      * @throws RuntimeException If the stream resource has been detached.
+     *
+     * @phpstan-assert resource $this->resource
      */
     private function guardDetached(): void
     {

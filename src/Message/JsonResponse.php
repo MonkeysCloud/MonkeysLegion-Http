@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -19,18 +20,18 @@ namespace MonkeysLegion\Http\Message;
 final class JsonResponse extends Response
 {
     /**
-     * @param mixed $data   Any JSON-serializable value.
-     * @param int   $status HTTP status code.
-     * @param int   $flags  json_encode() flags.
+     * @param mixed $data      Any JSON-serializable value.
+     * @param int   $status    HTTP status code.
+     * @param int   $jsonFlags json_encode() flags.
      *
      * @throws \JsonException On encoding failure.
      */
     public function __construct(
         private readonly mixed $data,
         int $status = 200,
-        private readonly int $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+        private readonly int $jsonFlags = \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES,
     ) {
-        $json = json_encode($data, $this->jsonFlags | JSON_THROW_ON_ERROR);
+        $json = \json_encode($data, $this->jsonFlags | \JSON_THROW_ON_ERROR);
         parent::__construct(
             Stream::createFromString($json),
             $status,
@@ -71,7 +72,7 @@ final class JsonResponse extends Response
             $envelope['meta'] = $meta;
         }
 
-        $json = json_encode($envelope, $this->jsonFlags | JSON_THROW_ON_ERROR);
+        $json = \json_encode($envelope, $this->jsonFlags | \JSON_THROW_ON_ERROR);
         return new Response(
             Stream::createFromString($json),
             $this->getStatusCode(),
@@ -95,7 +96,7 @@ final class JsonResponse extends Response
         int $perPage,
         ?int $lastPage = null,
     ): Response {
-        $lastPage ??= (int) ceil($total / max(1, $perPage));
+        $lastPage ??= (int) \ceil($total / \max(1, $perPage));
 
         return $this->withEnvelope(meta: [
             'pagination' => [

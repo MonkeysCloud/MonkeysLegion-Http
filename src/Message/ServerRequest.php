@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -37,6 +38,14 @@ final class ServerRequest implements ServerRequestInterface
     /** @var array<string, mixed> */
     private array $attributes = [];
 
+    /**
+     * @param array<string, string|string[]>      $headers
+     * @param array<string, mixed>                $serverParams
+     * @param array<string, mixed>                $cookieParams
+     * @param array<string, mixed>                $queryParams
+     * @param array<string, mixed>                $uploadedFiles
+     * @param array<array-key, mixed>|object|null $parsedBody
+     */
     public function __construct(
         private string              $method,
         private UriInterface        $uri,
@@ -60,52 +69,43 @@ final class ServerRequest implements ServerRequestInterface
      */
     public static function fromGlobals(): self
     {
-        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        $method = self::stringify($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
         $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host   = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
-        $uri    = new Uri($scheme . '://' . $host . ($_SERVER['REQUEST_URI'] ?? '/'));
+        $host   = self::stringify($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost'));
+        $uri    = new Uri($scheme . '://' . $host . self::stringify($_SERVER['REQUEST_URI'] ?? '/'));
 
         $headers = [];
         foreach ($_SERVER as $key => $value) {
-            if (str_starts_with($key, 'HTTP_')) {
-                $name = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($key, 5)))));
-                $headers[$name] = $value;
+            if (\str_starts_with($key, 'HTTP_')) {
+                $name = \str_replace(' ', '-', \ucwords(\strtolower(\str_replace('_', ' ', \substr($key, 5)))));
+                $headers[$name] = self::stringify($value);
             }
         }
         if (isset($_SERVER['CONTENT_TYPE'])) {
-            $headers['Content-Type'] = $_SERVER['CONTENT_TYPE'];
+            $headers['Content-Type'] = self::stringify($_SERVER['CONTENT_TYPE']);
         }
         if (isset($_SERVER['CONTENT_LENGTH'])) {
-            $headers['Content-Length'] = $_SERVER['CONTENT_LENGTH'];
+            $headers['Content-Length'] = self::stringify($_SERVER['CONTENT_LENGTH']);
         }
 
         $protocol = isset($_SERVER['SERVER_PROTOCOL'])
-            ? str_replace('HTTP/', '', $_SERVER['SERVER_PROTOCOL'])
+            ? \str_replace('HTTP/', '', self::stringify($_SERVER['SERVER_PROTOCOL']))
             : '1.1';
 
-        $body = new Stream(fopen('php://input', 'r'));
+        $handle = @\fopen('php://input', 'r');
+        $body   = $handle === false ? Stream::empty() : new Stream($handle);
 
-        // Auto-parse JSON body for any method when Content-Type is application/json
-        // Only override $_POST if it's empty (avoid discarding form data on POST)
+        // Auto-parse JSON body when Content-Type is application/json.
+        // Only override $_POST if it's empty (avoid discarding form data on POST).
         $parsedBody = $_POST;
-        if ($parsedBody === [] && isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
+        if ($parsedBody === [] && isset($headers['Content-Type']) && \str_contains($headers['Content-Type'], 'application/json')) {
             $rawBody = (string) $body;
-            $decoded = json_decode($rawBody, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $decoded = \json_decode($rawBody, true);
+            if (\json_last_error() === \JSON_ERROR_NONE && \is_array($decoded)) {
                 $parsedBody = $decoded;
             }
             // Rewind so downstream can re-read
-            if ($body->isSeekable()) {
-                $body->rewind();
-            }
-        } elseif ($method !== 'POST' && isset($headers['Content-Type']) && str_contains($headers['Content-Type'], 'application/json')) {
-            // For non-POST methods (PUT, PATCH, DELETE), always parse JSON body
-            $rawBody = (string) $body;
-            $decoded = json_decode($rawBody, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $parsedBody = $decoded;
-            }
             if ($body->isSeekable()) {
                 $body->rewind();
             }
@@ -137,13 +137,13 @@ final class ServerRequest implements ServerRequestInterface
     public function input(string $key, mixed $default = null): mixed
     {
         $data = $this->parsedBody;
-        if (!is_array($data)) {
+        if (!\is_array($data)) {
             return $default;
         }
 
-        $segments = explode('.', $key);
+        $segments = \explode('.', $key);
         foreach ($segments as $segment) {
-            if (!is_array($data) || !array_key_exists($segment, $data)) {
+            if (!\is_array($data) || !\array_key_exists($segment, $data)) {
                 return $default;
             }
             $data = $data[$segment];
@@ -159,7 +159,7 @@ final class ServerRequest implements ServerRequestInterface
      */
     public function all(): array
     {
-        return is_array($this->parsedBody) ? $this->parsedBody : [];
+        return \is_array($this->parsedBody) ? $this->parsedBody : [];
     }
 
     /**
@@ -170,7 +170,7 @@ final class ServerRequest implements ServerRequestInterface
      */
     public function only(array $keys): array
     {
-        return array_intersect_key($this->all(), array_flip($keys));
+        return \array_intersect_key($this->all(), \array_flip($keys));
     }
 
     /**
@@ -179,7 +179,7 @@ final class ServerRequest implements ServerRequestInterface
     public function bearerToken(): ?string
     {
         $header = $this->getHeaderLine('authorization');
-        if (preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
+        if (\preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
             return $matches[1];
         }
         return null;
@@ -190,7 +190,7 @@ final class ServerRequest implements ServerRequestInterface
      */
     public function ip(): string
     {
-        return $this->serverParams['REMOTE_ADDR'] ?? '0.0.0.0';
+        return self::stringify($this->serverParams['REMOTE_ADDR'] ?? '0.0.0.0');
     }
 
     /**
@@ -208,8 +208,8 @@ final class ServerRequest implements ServerRequestInterface
     {
         $accept      = $this->getHeaderLine('accept');
         $contentType = $this->getHeaderLine('content-type');
-        return str_contains($accept, 'application/json')
-            || str_contains($contentType, 'application/json');
+        return \str_contains($accept, 'application/json')
+            || \str_contains($contentType, 'application/json');
     }
 
     /**
@@ -226,7 +226,7 @@ final class ServerRequest implements ServerRequestInterface
      */
     public function isAjax(): bool
     {
-        return strtolower($this->getHeaderLine('x-requested-with')) === 'xmlhttprequest';
+        return \strtolower($this->getHeaderLine('x-requested-with')) === 'xmlhttprequest';
     }
 
     /**
@@ -234,7 +234,7 @@ final class ServerRequest implements ServerRequestInterface
      */
     public function isMethod(string $method): bool
     {
-        return strcasecmp($this->method, $method) === 0;
+        return \strcasecmp($this->method, $method) === 0;
     }
 
     /**
@@ -249,11 +249,11 @@ final class ServerRequest implements ServerRequestInterface
             $this->body->rewind();
         }
 
-        return hash('sha256', implode('|', [
+        return \hash('sha256', \implode('|', [
             $this->method,
             $this->uri->getPath(),
             $this->uri->getQuery(),
-            md5($body),
+            \md5($body),
         ]));
     }
 
@@ -335,26 +335,27 @@ final class ServerRequest implements ServerRequestInterface
     /** {@inheritDoc} */
     public function hasHeader($name): bool
     {
-        return isset($this->headers[strtolower($name)]);
+        return isset($this->headers[\strtolower($name)]);
     }
 
     /** {@inheritDoc} */
     public function getHeader($name): array
     {
-        return $this->headers[strtolower($name)] ?? [];
+        return $this->headers[\strtolower($name)] ?? [];
     }
 
     /** {@inheritDoc} */
     public function getHeaderLine($name): string
     {
-        return implode(', ', $this->getHeader($name));
+        return \implode(', ', $this->getHeader($name));
     }
 
-    /** {@inheritDoc} */
-    public function withHeader($name, $value): static
+    /** {@inheritDoc} */    public function withHeader($name, $value): static
     {
         $new = clone $this;
-        $new->headers[strtolower($name)] = is_array($value) ? array_values($value) : [$value];
+        $new->headers[\strtolower($name)] = \is_array($value)
+            ? \array_map(self::stringify(...), \array_values($value))
+            : [self::stringify($value)];
         return $new;
     }
 
@@ -362,9 +363,11 @@ final class ServerRequest implements ServerRequestInterface
     public function withAddedHeader($name, $value): static
     {
         $new = clone $this;
-        $key = strtolower($name);
-        $vals = is_array($value) ? $value : [$value];
-        $new->headers[$key] = array_merge($new->headers[$key] ?? [], $vals);
+        $key  = \strtolower($name);
+        $vals = \is_array($value)
+            ? \array_map(self::stringify(...), \array_values($value))
+            : [self::stringify($value)];
+        $new->headers[$key] = \array_merge($new->headers[$key] ?? [], $vals);
         return $new;
     }
 
@@ -372,7 +375,7 @@ final class ServerRequest implements ServerRequestInterface
     public function withoutHeader($name): static
     {
         $new = clone $this;
-        unset($new->headers[strtolower($name)]);
+        unset($new->headers[\strtolower($name)]);
         return $new;
     }
 
@@ -392,19 +395,28 @@ final class ServerRequest implements ServerRequestInterface
 
     // ── ServerRequestInterface ─────────────────────────────────
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @return array<string, mixed>
+     */
     public function getServerParams(): array
     {
         return $this->serverParams;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @return array<string, mixed>
+     */
     public function getCookieParams(): array
     {
         return $this->cookieParams;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @param array<string, mixed> $cookies
+     */
     public function withCookieParams(array $cookies): static
     {
         $new = clone $this;
@@ -412,13 +424,19 @@ final class ServerRequest implements ServerRequestInterface
         return $new;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @return array<string, mixed>
+     */
     public function getQueryParams(): array
     {
         return $this->queryParams;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @param array<string, mixed> $query
+     */
     public function withQueryParams(array $query): static
     {
         $new = clone $this;
@@ -426,13 +444,19 @@ final class ServerRequest implements ServerRequestInterface
         return $new;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @return array<string, mixed>
+     */
     public function getUploadedFiles(): array
     {
         return $this->uploadedFiles;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @param array<string, mixed> $uploadedFiles
+     */
     public function withUploadedFiles(array $uploadedFiles): static
     {
         $new = clone $this;
@@ -440,13 +464,19 @@ final class ServerRequest implements ServerRequestInterface
         return $new;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @return array<array-key, mixed>|object|null
+     */
     public function getParsedBody(): array|object|null
     {
         return $this->parsedBody;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @param array<array-key, mixed>|object|null $data
+     */
     public function withParsedBody($data): static
     {
         $new = clone $this;
@@ -454,7 +484,10 @@ final class ServerRequest implements ServerRequestInterface
         return $new;
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @return array<string, mixed>
+     */
     public function getAttributes(): array
     {
         return $this->attributes;
@@ -494,8 +527,18 @@ final class ServerRequest implements ServerRequestInterface
     {
         $out = [];
         foreach ($headers as $k => $v) {
-            $out[strtolower($k)] = is_array($v) ? array_values($v) : [$v];
+            $out[\strtolower($k)] = \is_array($v)
+                ? \array_map(self::stringify(...), \array_values($v))
+                : [self::stringify($v)];
         }
         return $out;
+    }
+
+    /**
+     * Safely convert a mixed value (e.g. a $_SERVER entry) to a string.
+     */
+    private static function stringify(mixed $value): string
+    {
+        return \is_scalar($value) ? (string) $value : '';
     }
 }

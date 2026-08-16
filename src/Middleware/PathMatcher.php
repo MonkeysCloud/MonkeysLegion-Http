@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -28,14 +29,14 @@ final class PathMatcher
                 return true;
             }
 
-            if (str_ends_with($pattern, '*')) {
-                $prefix = rtrim($pattern, '*');
-                if (str_starts_with($path, $prefix)) {
+            if (\str_ends_with($pattern, '*')) {
+                $prefix = \rtrim($pattern, '*');
+                if (\str_starts_with($path, $prefix)) {
                     return true;
                 }
             }
 
-            if ($pattern === $path || fnmatch($pattern, $path, FNM_CASEFOLD)) {
+            if ($pattern === $path || \fnmatch($pattern, $path, \FNM_CASEFOLD)) {
                 return true;
             }
         }

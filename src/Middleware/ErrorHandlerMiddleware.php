@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -67,7 +68,7 @@ final class ErrorHandlerMiddleware implements MiddlewareInterface
     private function resolveStatusCode(\Throwable $e): int
     {
         $code = $e->getCode();
-        if (is_int($code) && $code >= 400 && $code < 600) {
+        if (\is_int($code) && $code >= 400 && $code < 600) {
             return $code;
         }
         return 500;
@@ -88,7 +89,7 @@ final class ErrorHandlerMiddleware implements MiddlewareInterface
         if ($this->logger !== null) {
             $this->logger->error($e->getMessage(), $context);
         } else {
-            error_log(sprintf(
+            \error_log(\sprintf(
                 'Exception [%s]: %s in %s:%d',
                 $e::class,
                 $e->getMessage(),

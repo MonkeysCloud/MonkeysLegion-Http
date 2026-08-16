@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -26,7 +27,8 @@ final class RequestSizeLimitMiddleware implements MiddlewareInterface
      */
     public function __construct(
         private readonly int $maxBytes = 10_485_760,
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -50,10 +52,10 @@ final class RequestSizeLimitMiddleware implements MiddlewareInterface
 
     private function reject(): ResponseInterface
     {
-        $json = json_encode([
+        $json = \json_encode([
             'status'  => 'error',
-            'message' => sprintf('Request body exceeds maximum allowed size of %s bytes.', number_format($this->maxBytes)),
-        ], JSON_UNESCAPED_SLASHES);
+            'message' => \sprintf('Request body exceeds maximum allowed size of %s bytes.', \number_format($this->maxBytes)),
+        ], \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
         return new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($json),

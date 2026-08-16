@@ -8,7 +8,6 @@ use MonkeysLegion\Http\Message\Response;
 use MonkeysLegion\Http\Message\ServerRequest;
 use MonkeysLegion\Http\Message\Stream;
 use MonkeysLegion\Http\Message\Uri;
-use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
@@ -45,10 +44,13 @@ final class HttpFactory implements
         );
     }
 
-    /** {@inheritDoc} */
+    /** {@inheritDoc}
+     *
+     * @param array<string, mixed> $serverParams
+     */
     public function createServerRequest(string $method, $uri, array $serverParams = []): ServerRequestInterface
     {
-        $uriObj = is_string($uri) ? new Uri($uri) : $uri;
+        $uriObj = \is_string($uri) ? new Uri($uri) : $uri;
 
         return new ServerRequest(
             $method,

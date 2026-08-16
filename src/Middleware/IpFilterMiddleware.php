@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -29,7 +30,8 @@ final class IpFilterMiddleware implements MiddlewareInterface
         private readonly array $allowList  = [],
         private readonly array $denyList   = [],
         private readonly int   $denyStatus = 403,
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -60,7 +62,7 @@ final class IpFilterMiddleware implements MiddlewareInterface
     private function matchesList(string $ip, array $list): bool
     {
         foreach ($list as $entry) {
-            if (str_contains($entry, '/')) {
+            if (\str_contains($entry, '/')) {
                 if ($this->ipInCidr($ip, $entry)) {
                     return true;
                 }
@@ -73,39 +75,39 @@ final class IpFilterMiddleware implements MiddlewareInterface
 
     private function ipInCidr(string $ip, string $cidr): bool
     {
-        [$subnet, $bits] = explode('/', $cidr, 2);
+        [$subnet, $bits] = \explode('/', $cidr, 2);
         $bits = (int) $bits;
 
-        $ipBin  = @inet_pton($ip);
-        $subBin = @inet_pton($subnet);
+        $ipBin  = @\inet_pton($ip);
+        $subBin = @\inet_pton($subnet);
 
-        if ($ipBin === false || $subBin === false || strlen($ipBin) !== strlen($subBin)) {
+        if ($ipBin === false || $subBin === false || \strlen($ipBin) !== \strlen($subBin)) {
             return false;
         }
 
         // Validate CIDR prefix length
-        $totalBits = strlen($ipBin) * 8;
+        $totalBits = \strlen($ipBin) * 8;
         if ($bits < 0 || $bits > $totalBits) {
             return false;
         }
 
         // Build mask and compare
-        $byteLen = strlen($ipBin);
-        $mask    = str_repeat("\xff", intdiv($bits, 8));
+        $byteLen = \strlen($ipBin);
+        $mask    = \str_repeat("\xff", \intdiv($bits, 8));
         if ($bits % 8 !== 0) {
-            $mask .= chr(0xff << (8 - ($bits % 8)) & 0xff);
+            $mask .= \chr(0xff << (8 - ($bits % 8)) & 0xff);
         }
-        $mask = str_pad($mask, $byteLen, "\x00");
+        $mask = \str_pad($mask, $byteLen, "\x00");
 
         return ($ipBin & $mask) === ($subBin & $mask);
     }
 
     private function reject(): ResponseInterface
     {
-        $json = json_encode([
+        $json = \json_encode([
             'status'  => 'error',
             'message' => 'Access denied.',
-        ], JSON_UNESCAPED_SLASHES);
+        ], \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
         return new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($json),

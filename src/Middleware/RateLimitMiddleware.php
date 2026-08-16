@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -46,7 +47,8 @@ final class RateLimitMiddleware implements MiddlewareInterface
         private readonly int             $limit     = self::DEFAULT_LIMIT,
         private readonly int             $window    = self::DEFAULT_WINDOW,
         private readonly string          $keyPrefix = 'ratelimit:',
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -56,18 +58,22 @@ final class RateLimitMiddleware implements MiddlewareInterface
         $routeLimit  = $this->limit;
         $routeWindow = $this->window;
         $override    = $request->getAttribute('rate_limit');
-        if (is_array($override)) {
-            $routeLimit  = (int) ($override['limit']  ?? $routeLimit);
-            $routeWindow = (int) ($override['window'] ?? $routeWindow);
+        if (\is_array($override)) {
+            $routeLimit  = isset($override['limit']) && \is_numeric($override['limit'])
+                ? (int) $override['limit']
+                : $routeLimit;
+            $routeWindow = isset($override['window']) && \is_numeric($override['window'])
+                ? (int) $override['window']
+                : $routeWindow;
         }
 
         [$key, $storage] = $this->resolveKey($request);
-        $now = time();
+        $now = \time();
 
         // Shared cache path
         if ($this->cache !== null) {
             try {
-                [$hits, $reset] = $this->cacheFlow($key, $now, $routeWindow);
+                [$hits, $reset] = $this->cacheFlow($this->cache, $key, $now, $routeWindow);
 
                 if ($hits > $routeLimit) {
                     return $this->reject($reset, $routeLimit, $storage);
@@ -97,14 +103,14 @@ final class RateLimitMiddleware implements MiddlewareInterface
     private function resolveKey(ServerRequestInterface $request): array
     {
         if ($uid = $request->getAttribute('uid')) {
-            return [$this->keyPrefix . 'uid:' . $uid, 'uid'];
+            return [$this->keyPrefix . 'uid:' . (\is_scalar($uid) ? (string) $uid : ''), 'uid'];
         }
 
         $ip = $request->getAttribute('client_ip')
             ?? $request->getServerParams()['REMOTE_ADDR']
             ?? '0.0.0.0';
 
-        return [$this->keyPrefix . 'ip:' . $ip, 'ip'];
+        return [$this->keyPrefix . 'ip:' . (\is_scalar($ip) ? (string) $ip : ''), 'ip'];
     }
 
     // ── Cache Path ─────────────────────────────────────────────
@@ -112,23 +118,33 @@ final class RateLimitMiddleware implements MiddlewareInterface
     /**
      * @return array{int, int} [hits, resetTs]
      */
-    private function cacheFlow(string $key, int $now, int $window): array
+    private function cacheFlow(CacheInterface $cache, string $key, int $now, int $window): array
     {
         $ttlKey = $key . ':ttl';
 
-        if (method_exists($this->cache, 'increment')) {
-            /** @noinspection PhpUndefinedMethodInspection */
-            $hits = $this->cache->increment($key);
+        if (\method_exists($cache, 'increment')) {
+            // Non-standard atomic increment support for PSR-16 caches that provide it.
+            $hits = $cache->increment($key);
             if ($hits === 1) {
-                $this->cache->set($key, 1, $window);
-                $this->cache->set($ttlKey, $now + $window, $window);
+                $cache->set($key, 1, $window);
+                $cache->set($ttlKey, $now + $window, $window);
             }
         } else {
-            $hits = ((int) $this->cache->get($key, 0)) + 1;
-            $this->cache->set($key, $hits, $window);
+            $stored  = $cache->get($key, 0);
+            $current = (int) (\is_scalar($stored) ? $stored : 0);
+            $hits    = $current + 1;
+            $cache->set($key, $hits, $window);
+
+            // Persist the bucket's reset timestamp on creation so the window
+            // does not slide forward on every request (which would make
+            // Retry-After always report the full window).
+            if ($current === 0) {
+                $cache->set($ttlKey, $now + $window, $window);
+            }
         }
 
-        $reset = (int) $this->cache->get($ttlKey, $now + $window);
+        $storedReset = $cache->get($ttlKey, $now + $window);
+        $reset       = (int) (\is_scalar($storedReset) ? $storedReset : $now + $window);
         return [$hits, $reset];
     }
 
@@ -139,7 +155,15 @@ final class RateLimitMiddleware implements MiddlewareInterface
      */
     private function localFlow(string $key, int $now, int $window): array
     {
-        [$reset, $hits] = $this->local[$key] ?? [$now + $window, 0];
+        $entry = $this->local[$key] ?? null;
+
+        if ($entry === null) {
+            $reset = $now + $window;
+            $hits  = 0;
+        } else {
+            $reset = $entry['reset'];
+            $hits  = $entry['hits'];
+        }
 
         if ($now >= $reset) {
             $reset = $now + $window;
@@ -147,7 +171,7 @@ final class RateLimitMiddleware implements MiddlewareInterface
         }
 
         $hits++;
-        $this->local[$key] = [$reset, $hits];
+        $this->local[$key] = ['reset' => $reset, 'hits' => $hits];
 
         return [$hits, $reset];
     }
@@ -156,10 +180,10 @@ final class RateLimitMiddleware implements MiddlewareInterface
 
     private function reject(int $reset, int $limit, string $storage): ResponseInterface
     {
-        $json = json_encode([
+        $json = \json_encode([
             'status'  => 'error',
             'message' => 'Too many requests. Please try again later.',
-        ], JSON_UNESCAPED_SLASHES);
+        ], \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
         $response = new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($json),
@@ -168,7 +192,7 @@ final class RateLimitMiddleware implements MiddlewareInterface
         );
 
         return $this->addHeaders($response, $limit + 1, $reset, $limit, $storage)
-            ->withHeader('Retry-After', (string) max(0, $reset - time()));
+            ->withHeader('Retry-After', (string) \max(0, $reset - \time()));
     }
 
     private function addHeaders(
@@ -179,9 +203,9 @@ final class RateLimitMiddleware implements MiddlewareInterface
         string $storage,
     ): ResponseInterface {
         return $response
-            ->withHeader('X-RateLimit-Limit',     (string) $limit)
-            ->withHeader('X-RateLimit-Remaining', (string) max(0, $limit - $hits))
-            ->withHeader('X-RateLimit-Reset',     (string) $reset)
-            ->withHeader('X-RateLimit-Storage',   $storage);
+            ->withHeader('X-RateLimit-Limit', (string) $limit)
+            ->withHeader('X-RateLimit-Remaining', (string) \max(0, $limit - $hits))
+            ->withHeader('X-RateLimit-Reset', (string) $reset)
+            ->withHeader('X-RateLimit-Storage', $storage);
     }
 }

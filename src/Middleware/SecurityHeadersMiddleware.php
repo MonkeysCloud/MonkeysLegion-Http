@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -36,7 +37,7 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
         string $preset = 'strict',
         array $overrides = [],
     ) {
-        $this->headers = array_merge(self::preset($preset), $overrides);
+        $this->headers = \array_merge(self::preset($preset), $overrides);
     }
 
     public function process(
@@ -83,7 +84,7 @@ final class SecurityHeadersMiddleware implements MiddlewareInterface
                 'Referrer-Policy'           => 'strict-origin-when-cross-origin',
                 'Permissions-Policy'        => 'camera=(), microphone=(), geolocation=()',
             ],
-            default => throw new \InvalidArgumentException(sprintf(
+            default => throw new \InvalidArgumentException(\sprintf(
                 'Unknown security preset "%s". Use "strict", "relaxed", or "api".',
                 $name,
             )),

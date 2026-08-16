@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -27,28 +28,29 @@ final class LoggingMiddleware implements MiddlewareInterface
 {
     public function __construct(
         private readonly ?LoggerInterface $logger = null,
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
         RequestHandlerInterface $handler,
     ): ResponseInterface {
-        $start    = hrtime(true);
+        $start    = \hrtime(true);
         $response = $handler->handle($request);
-        $elapsed  = (hrtime(true) - $start) / 1e6;
+        $elapsed  = (\hrtime(true) - $start) / 1e6;
 
         $context = [
             'method'        => $request->getMethod(),
             'uri'           => (string) $request->getUri(),
             'status'        => $response->getStatusCode(),
-            'duration_ms'   => round($elapsed, 2),
+            'duration_ms'   => \round($elapsed, 2),
             'request_id'    => $request->getAttribute('request_id'),
             'response_size' => $response->getBody()->getSize(),
         ];
 
-        $message = sprintf(
+        $message = \sprintf(
             '[%s] %s %s – %d (%.2fms)',
-            date('c'),
+            \date('c'),
             $context['method'],
             $context['uri'],
             $context['status'],
@@ -58,7 +60,7 @@ final class LoggingMiddleware implements MiddlewareInterface
         if ($this->logger !== null) {
             $this->logger->info($message, $context);
         } else {
-            error_log($message);
+            \error_log($message);
         }
 
         return $response;

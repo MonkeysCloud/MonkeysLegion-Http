@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -34,14 +35,14 @@ final class Uri implements UriInterface
     public function __construct(string $uri = '')
     {
         if ($uri !== '') {
-            $parts = parse_url($uri);
+            $parts = \parse_url($uri);
             if ($parts === false) {
-                throw new InvalidArgumentException(sprintf('Unable to parse URI: "%s".', $uri));
+                throw new InvalidArgumentException(\sprintf('Unable to parse URI: "%s".', $uri));
             }
-            $this->scheme   = isset($parts['scheme'])   ? strtolower($parts['scheme']) : '';
+            $this->scheme   = isset($parts['scheme']) ? \strtolower($parts['scheme']) : '';
             $this->userInfo = ($parts['user'] ?? '')
                 . (isset($parts['pass']) ? ':' . $parts['pass'] : '');
-            $this->host     = isset($parts['host'])     ? strtolower($parts['host']) : '';
+            $this->host     = isset($parts['host']) ? \strtolower($parts['host']) : '';
             $this->port     = $parts['port']            ?? null;
             $this->path     = $parts['path']            ?? '';
             $this->query    = $parts['query']           ?? '';
@@ -112,7 +113,7 @@ final class Uri implements UriInterface
     public function withScheme($scheme): static
     {
         $new = clone $this;
-        $new->scheme = strtolower($scheme);
+        $new->scheme = \strtolower($scheme);
         return $new;
     }
 
@@ -128,7 +129,7 @@ final class Uri implements UriInterface
     public function withHost($host): static
     {
         $new = clone $this;
-        $new->host = strtolower($host);
+        $new->host = \strtolower($host);
         return $new;
     }
 
@@ -136,7 +137,7 @@ final class Uri implements UriInterface
     public function withPort($port): static
     {
         if ($port !== null && ($port < 0 || $port > 65535)) {
-            throw new InvalidArgumentException(sprintf('Invalid port: %d. Must be 0–65535.', $port));
+            throw new InvalidArgumentException(\sprintf('Invalid port: %d. Must be 0–65535.', $port));
         }
         $new = clone $this;
         $new->port = $port;
@@ -155,7 +156,7 @@ final class Uri implements UriInterface
     public function withQuery($query): static
     {
         $new = clone $this;
-        $new->query = ltrim($query, '?');
+        $new->query = \ltrim($query, '?');
         return $new;
     }
 
@@ -163,7 +164,7 @@ final class Uri implements UriInterface
     public function withFragment($fragment): static
     {
         $new = clone $this;
-        $new->fragment = ltrim($fragment, '#');
+        $new->fragment = \ltrim($fragment, '#');
         return $new;
     }
 

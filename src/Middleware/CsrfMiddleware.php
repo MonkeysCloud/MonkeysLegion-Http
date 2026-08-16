@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -42,16 +43,20 @@ final class CsrfMiddleware implements MiddlewareInterface
         private readonly string $headerName   = 'X-CSRF-Token',
         private readonly int    $tokenLength  = 32,
         private readonly bool   $secureCookie = true,
-    ) {}
+    ) {
+        if ($this->tokenLength < 1) {
+            throw new \InvalidArgumentException('Token length must be at least 1 byte.');
+        }
+    }
 
     public function process(
         ServerRequestInterface $request,
         RequestHandlerInterface $handler,
     ): ResponseInterface {
-        $method = strtoupper($request->getMethod());
+        $method = \strtoupper($request->getMethod());
 
         // Safe methods — ensure cookie exists, attach token to request attribute
-        if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+        if (\in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
             $token = $this->getTokenFromCookie($request);
             if ($token === null) {
                 $token = $this->generateToken();
@@ -70,7 +75,7 @@ final class CsrfMiddleware implements MiddlewareInterface
 
         if ($cookieToken === null
             || $requestToken === null
-            || !hash_equals($cookieToken, $requestToken)
+            || !\hash_equals($cookieToken, $requestToken)
         ) {
             return $this->reject();
         }
@@ -98,7 +103,7 @@ final class CsrfMiddleware implements MiddlewareInterface
 
         // Check parsed body
         $body = $request->getParsedBody();
-        if (is_array($body) && isset($body[$this->fieldName])) {
+        if (\is_array($body) && isset($body[$this->fieldName])) {
             return (string) $body[$this->fieldName];
         }
 
@@ -107,13 +112,13 @@ final class CsrfMiddleware implements MiddlewareInterface
 
     private function generateToken(): string
     {
-        return bin2hex(random_bytes($this->tokenLength));
+        return \bin2hex(\random_bytes($this->tokenLength));
     }
 
     private function setCookie(ResponseInterface $response, string $token): ResponseInterface
     {
         $parts = [
-            sprintf('%s=%s', $this->cookieName, $token),
+            \sprintf('%s=%s', $this->cookieName, $token),
             'Path=/',
             'HttpOnly',
             'SameSite=Strict',
@@ -123,15 +128,15 @@ final class CsrfMiddleware implements MiddlewareInterface
             $parts[] = 'Secure';
         }
 
-        return $response->withAddedHeader('Set-Cookie', implode('; ', $parts));
+        return $response->withAddedHeader('Set-Cookie', \implode('; ', $parts));
     }
 
     private function reject(): ResponseInterface
     {
-        $json = json_encode([
+        $json = \json_encode([
             'status'  => 'error',
             'message' => 'CSRF token validation failed.',
-        ], JSON_UNESCAPED_SLASHES);
+        ], \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
         return new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($json),

@@ -4,6 +4,7 @@
 
 # Build / distribution artifacts
 /build/
+/.build/
 /dist/
 /*.phar
 
@@ -29,7 +30,9 @@
 # PHPUnit and test artifacts
 /phpunit.xml
 /phpunit.result.cache
+/.phpunit.cache/
+/.php-cs-fixer.cache
 
 # OS-specific files
 .DS_Store
-Thumbs.db.phpunit.cache
+Thumbs.db

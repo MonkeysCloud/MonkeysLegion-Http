@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -36,7 +37,8 @@ final class AuthMiddleware implements MiddlewareInterface
         private readonly array    $publicPaths   = ['/'],
         private readonly string   $realm         = 'Protected',
         private readonly mixed    $jwtDecoder    = null,
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -49,7 +51,7 @@ final class AuthMiddleware implements MiddlewareInterface
 
         // Extract Bearer token
         $header = $request->getHeaderLine('Authorization');
-        if (!preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
+        if (!\preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
             return $this->unauthorized();
         }
 
@@ -58,7 +60,7 @@ final class AuthMiddleware implements MiddlewareInterface
         // JWT decoder mode
         if ($this->jwtDecoder !== null) {
             $claims = ($this->jwtDecoder)($token);
-            if ($claims === false || !is_array($claims)) {
+            if ($claims === false || !\is_array($claims)) {
                 return $this->unauthorized();
             }
 
@@ -70,7 +72,7 @@ final class AuthMiddleware implements MiddlewareInterface
         }
 
         // Static token mode — timing-safe comparison
-        if ($this->requiredToken === '' || !hash_equals($this->requiredToken, $token)) {
+        if ($this->requiredToken === '' || !\hash_equals($this->requiredToken, $token)) {
             return $this->unauthorized();
         }
 
@@ -79,15 +81,15 @@ final class AuthMiddleware implements MiddlewareInterface
 
     private function unauthorized(): ResponseInterface
     {
-        $json = json_encode([
+        $json = \json_encode([
             'status'  => 'error',
             'message' => 'Unauthorized.',
-        ], JSON_UNESCAPED_SLASHES);
+        ], \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
-        return (new \MonkeysLegion\Http\Message\Response(
+        return new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($json),
             401,
             ['Content-Type' => 'application/json'],
-        ))->withHeader('WWW-Authenticate', sprintf('Bearer realm="%s"', $this->realm));
+        )->withHeader('WWW-Authenticate', \sprintf('Bearer realm="%s"', $this->realm));
     }
 }

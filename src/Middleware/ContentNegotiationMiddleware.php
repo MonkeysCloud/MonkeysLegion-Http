@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -15,6 +16,11 @@ use Psr\Http\Server\RequestHandlerInterface;
  *
  * Content-negotiation middleware — serializes controller payloads
  * to JSON, XML, or HTML based on the client's Accept header.
+ *
+ * PSR-15 handlers always return a ResponseInterface, which passes through
+ * untouched (with a `Vary: Accept` header so shared caches do not serve
+ * the wrong variant). Handlers that return a PayloadInterface-backed value
+ * are serialized according to the Accept header.
  *
  * Preference order:
  *  1. application/json
@@ -33,17 +39,20 @@ final class ContentNegotiationMiddleware implements MiddlewareInterface
     ): ResponseInterface {
         $response = $handler->handle($request);
 
-        // If controller returned a ResponseInterface, keep it as-is
-        if ($response instanceof ResponseInterface) {
-            return $response;
+        // Serialize payload-backed responses; plain PSR-7 responses pass through.
+        if ($response instanceof PayloadInterface) {
+            return $this->serialize($response->toPayload(), $request->getHeaderLine('Accept'));
         }
 
-        // Otherwise serialize the payload
-        $acceptable = Accept::parse($request->getHeaderLine('Accept'));
+        return $response->withHeader('Vary', 'Accept');
+    }
 
-        $data = ($response instanceof PayloadInterface)
-            ? $response->toPayload()
-            : $response;
+    /**
+     * Serialize a payload to the best matching representation.
+     */
+    private function serialize(mixed $data, string $acceptHeader): ResponseInterface
+    {
+        $acceptable = Accept::parse($acceptHeader);
 
         foreach ($acceptable as $mime) {
             if ($mime === 'application/json' || $mime === '*/*') {
@@ -64,7 +73,7 @@ final class ContentNegotiationMiddleware implements MiddlewareInterface
 
     private function json(mixed $data): ResponseInterface
     {
-        $json = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $json = \json_encode($data, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
 
         return new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($json),
@@ -75,7 +84,7 @@ final class ContentNegotiationMiddleware implements MiddlewareInterface
 
     private function xml(mixed $data): ResponseInterface
     {
-        $xml = new \SimpleXMLElement('<root/>', LIBXML_NONET);
+        $xml = new \SimpleXMLElement('<root/>', \LIBXML_NONET);
         $this->arrayToXml($xml, $data);
 
         return new \MonkeysLegion\Http\Message\Response(
@@ -87,7 +96,7 @@ final class ContentNegotiationMiddleware implements MiddlewareInterface
 
     private function html(mixed $data): ResponseInterface
     {
-        $body = '<pre>' . htmlspecialchars(print_r($data, true)) . '</pre>';
+        $body = '<pre>' . \htmlspecialchars(\print_r($data, true)) . '</pre>';
 
         return new \MonkeysLegion\Http\Message\Response(
             \MonkeysLegion\Http\Message\Stream::createFromString($body),
@@ -100,13 +109,18 @@ final class ContentNegotiationMiddleware implements MiddlewareInterface
 
     private function arrayToXml(\SimpleXMLElement $node, mixed $data): void
     {
-        if (is_array($data)) {
+        if (\is_array($data)) {
             foreach ($data as $k => $v) {
-                $child = is_string($k) ? $node->addChild($k) : $node->addChild('item');
+                $child = \is_string($k) ? $node->addChild($k) : $node->addChild('item');
                 $this->arrayToXml($child, $v);
             }
         } else {
-            $node[0] = htmlspecialchars((string) $data, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+            $value = match (true) {
+                \is_string($data) => $data,
+                \is_scalar($data) => (string) $data,
+                default          => \json_encode($data) ?: '',
+            };
+            $node[0] = \htmlspecialchars($value, \ENT_XML1 | \ENT_QUOTES, 'UTF-8');
         }
     }
 }

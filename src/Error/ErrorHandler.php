@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Error;
@@ -48,7 +49,7 @@ final class ErrorHandler
         $this->renderer = new JsonErrorRenderer();
 
         if (self::$reservedMemory === null) {
-            self::$reservedMemory = str_repeat('x', self::RESERVED_MEMORY_SIZE);
+            self::$reservedMemory = \str_repeat('x', self::RESERVED_MEMORY_SIZE);
         }
     }
 
@@ -73,10 +74,10 @@ final class ErrorHandler
      */
     public function register(): void
     {
-        set_exception_handler([$this, 'handleException']);
-        set_error_handler([$this, 'handleError'], E_ALL);
-        register_shutdown_function([$this, 'handleShutdown']);
-        ini_set('display_errors', '0');
+        \set_exception_handler([$this, 'handleException']);
+        \set_error_handler([$this, 'handleError'], \E_ALL);
+        \register_shutdown_function([$this, 'handleShutdown']);
+        \ini_set('display_errors', '0');
     }
 
     /**
@@ -84,8 +85,8 @@ final class ErrorHandler
      */
     public function unregister(): void
     {
-        restore_exception_handler();
-        restore_error_handler();
+        \restore_exception_handler();
+        \restore_error_handler();
         self::$handlingStack = [];
     }
 
@@ -100,12 +101,12 @@ final class ErrorHandler
             return;
         }
 
-        if (count(self::$handlingStack) >= self::MAX_RECURSION_DEPTH) {
+        if (\count(self::$handlingStack) >= self::MAX_RECURSION_DEPTH) {
             $this->emergencyResponse('Maximum recursion depth exceeded', $exception);
             return;
         }
 
-        self::$handlingStack[$exceptionId] = microtime(true);
+        self::$handlingStack[$exceptionId] = \microtime(true);
 
         try {
             $this->doHandleException($exception);
@@ -118,7 +119,7 @@ final class ErrorHandler
 
     public function handleError(int $severity, string $message, string $file, int $line): bool
     {
-        if (!(error_reporting() & $severity)) {
+        if (!(\error_reporting() & $severity)) {
             return false;
         }
 
@@ -130,13 +131,13 @@ final class ErrorHandler
     {
         self::$reservedMemory = null;
 
-        $error = error_get_last();
+        $error = \error_get_last();
         if ($error === null) {
             return;
         }
 
-        $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_RECOVERABLE_ERROR];
-        if (!in_array($error['type'], $fatalTypes, true)) {
+        $fatalTypes = [\E_ERROR, \E_PARSE, \E_CORE_ERROR, \E_COMPILE_ERROR, \E_RECOVERABLE_ERROR];
+        if (!\in_array($error['type'], $fatalTypes, true)) {
             return;
         }
 
@@ -144,8 +145,8 @@ final class ErrorHandler
             $error['message'],
             0,
             $error['type'],
-            $error['file'] ?? 'unknown',
-            $error['line'] ?? 0,
+            $error['file'],
+            $error['line'],
         ));
     }
 
@@ -164,8 +165,8 @@ final class ErrorHandler
             try {
                 [$fallbackContentType, $fallbackOutput] = $this->renderWithFallbackRenderer($exception, $renderException);
 
-                if (!headers_sent()) {
-                    header("Content-Type: {$fallbackContentType}; charset=UTF-8", true);
+                if (!\headers_sent()) {
+                    \header("Content-Type: {$fallbackContentType}; charset=UTF-8", true);
                 }
 
                 echo $fallbackOutput;
@@ -173,7 +174,7 @@ final class ErrorHandler
                 $this->emergencyResponse('Error rendering failed', $exception, $renderException);
             }
         }
-        if (PHP_SAPI !== 'cli' && !$this->debug) {
+        if (\PHP_SAPI !== 'cli' && !$this->debug) {
             exit(1);
         }
     }
@@ -189,7 +190,7 @@ final class ErrorHandler
                 'nested'   => $this->exceptionToArray($nested),
             ]);
         } catch (Throwable) {
-            error_log('Critical: Multiple exception failures - ' . $original->getMessage());
+            \error_log('Critical: Multiple exception failures - ' . $original->getMessage());
         }
 
         $this->emergencyResponse('Nested exception during error handling', $original, $nested);
@@ -225,11 +226,12 @@ final class ErrorHandler
             return $contentType;
         }
 
-        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-        if (str_contains($accept, 'application/json')) {
+        $acceptValue = $_SERVER['HTTP_ACCEPT'] ?? '';
+        $accept      = \is_scalar($acceptValue) ? (string) $acceptValue : '';
+        if (\str_contains($accept, 'application/json')) {
             return 'application/json';
         }
-        if (str_contains($accept, 'text/plain')) {
+        if (\str_contains($accept, 'text/plain')) {
             return 'text/plain';
         }
 
@@ -238,7 +240,7 @@ final class ErrorHandler
 
     private function renderFallbackHtml(Throwable $exception, Throwable $renderException): string
     {
-        $output = (new BasicHtmlErrorRenderer())->render($exception, $this->debug);
+        $output = new BasicHtmlErrorRenderer()->render($exception, $this->debug);
 
         if (!$this->debug) {
             return $output;
@@ -246,18 +248,18 @@ final class ErrorHandler
 
         $debugInfo = "\n<!-- Nested render exception -->\n";
         $debugInfo .= "<div style=\"background: #b91c1c; color: white; padding: 1rem 2rem; position: relative; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-family: 'Inter', sans-serif;\">";
-        $debugInfo .= "<div style=\"max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.5rem;\">";
-        $debugInfo .= "<div style=\"display: flex; align-items: center; gap: 0.75rem;\">";
-        $debugInfo .= "<span style=\"background: rgba(255,255,255,0.2); padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;\">Renderer Failure</span>";
-        $debugInfo .= "<span style=\"font-weight: 600; font-size: 0.95rem;\">" . htmlspecialchars($renderException->getMessage(), ENT_QUOTES, 'UTF-8') . "</span>";
-        $debugInfo .= "</div>";
+        $debugInfo .= '<div style="max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 0.5rem;">';
+        $debugInfo .= '<div style="display: flex; align-items: center; gap: 0.75rem;">';
+        $debugInfo .= '<span style="background: rgba(255,255,255,0.2); padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 800; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">Renderer Failure</span>';
+        $debugInfo .= '<span style="font-weight: 600; font-size: 0.95rem;">' . \htmlspecialchars($renderException->getMessage(), \ENT_QUOTES, 'UTF-8') . '</span>';
+        $debugInfo .= '</div>';
         $debugInfo .= "<div style=\"font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; opacity: 0.8;\">";
-        $debugInfo .= "Occurred at " . htmlspecialchars($renderException->getFile(), ENT_QUOTES, 'UTF-8') . ":" . $renderException->getLine();
-        $debugInfo .= "</div></div></div>";
+        $debugInfo .= 'Occurred at ' . \htmlspecialchars($renderException->getFile(), \ENT_QUOTES, 'UTF-8') . ':' . $renderException->getLine();
+        $debugInfo .= '</div></div></div>';
 
-        if (preg_match('/<body[^>]*>/i', $output, $matches, PREG_OFFSET_CAPTURE)) {
-            $insertPos = $matches[0][1] + strlen($matches[0][0]);
-            return substr($output, 0, $insertPos) . $debugInfo . substr($output, $insertPos);
+        if (\preg_match('/<body[^>]*>/i', $output, $matches, \PREG_OFFSET_CAPTURE)) {
+            $insertPos = $matches[0][1] + \strlen($matches[0][0]);
+            return \substr($output, 0, $insertPos) . $debugInfo . \substr($output, $insertPos);
         }
 
         return $debugInfo . $output;
@@ -269,10 +271,10 @@ final class ErrorHandler
         $output .= $this->debug ? ($exception->getMessage() . "\n") : "An unexpected error occurred.\n";
 
         if ($this->debug) {
-            $output .= "Exception: " . $exception::class . "\n";
-            $output .= "At: " . $exception->getFile() . ':' . $exception->getLine() . "\n";
-            $output .= "Nested renderer exception: " . $renderException->getMessage() . "\n";
-            $output .= "Nested at: " . $renderException->getFile() . ':' . $renderException->getLine() . "\n";
+            $output .= 'Exception: ' . $exception::class . "\n";
+            $output .= 'At: ' . $exception->getFile() . ':' . $exception->getLine() . "\n";
+            $output .= 'Nested renderer exception: ' . $renderException->getMessage() . "\n";
+            $output .= 'Nested at: ' . $renderException->getFile() . ':' . $renderException->getLine() . "\n";
         }
 
         return $output;
@@ -283,7 +285,7 @@ final class ErrorHandler
         $payload = [
             'error' => true,
             'message' => $this->debug ? $exception->getMessage() : 'An unexpected error occurred.',
-            'timestamp' => date('c'),
+            'timestamp' => \date('c'),
         ];
 
         if ($this->debug) {
@@ -301,7 +303,7 @@ final class ErrorHandler
             ];
         }
 
-        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $encoded = \json_encode($payload, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
         if ($encoded === false) {
             throw new RuntimeException('Unable to encode fallback JSON error response.');
         }
@@ -312,9 +314,9 @@ final class ErrorHandler
     private function emergencyResponse(string $reason, Throwable $exception, ?Throwable $nested = null): void
     {
         try {
-            if (!headers_sent()) {
-                http_response_code(500);
-                header('Content-Type: text/plain; charset=UTF-8');
+            if (!\headers_sent()) {
+                \http_response_code(500);
+                \header('Content-Type: text/plain; charset=UTF-8');
             }
         } catch (Throwable) {
             // headers failed — continue
@@ -333,38 +335,34 @@ final class ErrorHandler
             }
         }
 
-        error_log("Emergency: {$reason} - {$exception->getMessage()}");
+        \error_log("Emergency: {$reason} - {$exception->getMessage()}");
 
-        if (PHP_SAPI !== 'cli' && !$this->debug) {
+        if (\PHP_SAPI !== 'cli' && !$this->debug) {
             exit(1);
         }
     }
 
     private function cleanOutputBuffers(): void
     {
-        try {
-            while (ob_get_level() > 0) {
-                if (!ob_end_clean()) {
-                    break;
-                }
+        while (\ob_get_level() > 0) {
+            if (!\ob_end_clean()) {
+                break;
             }
-        } catch (Throwable) {
-            // ignore
         }
     }
 
     private function sendErrorHeaders(): void
     {
-        if (headers_sent()) {
+        if (\headers_sent()) {
             return;
         }
 
         try {
-            http_response_code(500);
-            header(sprintf('Content-Type: %s; charset=UTF-8', $this->renderer->getContentType()));
-            header('Cache-Control: no-cache, no-store, must-revalidate');
-            header('Pragma: no-cache');
-            header('Expires: 0');
+            \http_response_code(500);
+            \header(\sprintf('Content-Type: %s; charset=UTF-8', $this->renderer->getContentType()));
+            \header('Cache-Control: no-cache, no-store, must-revalidate');
+            \header('Pragma: no-cache');
+            \header('Expires: 0');
         } catch (Throwable) {
             // ignore
         }
@@ -373,7 +371,7 @@ final class ErrorHandler
     private function logException(Throwable $exception): void
     {
         if ($this->logger === null) {
-            error_log(sprintf(
+            \error_log(\sprintf(
                 'Exception: %s in %s:%d',
                 $exception->getMessage(),
                 $exception->getFile(),
@@ -385,10 +383,10 @@ final class ErrorHandler
         try {
             $this->logger->error($exception->getMessage(), [
                 'exception' => $this->exceptionToArray($exception),
-                'timestamp' => date('c'),
+                'timestamp' => \date('c'),
             ]);
         } catch (Throwable) {
-            error_log(sprintf(
+            \error_log(\sprintf(
                 'Exception: %s in %s:%d',
                 $exception->getMessage(),
                 $exception->getFile(),
@@ -399,7 +397,7 @@ final class ErrorHandler
 
     private function getExceptionId(Throwable $exception): string
     {
-        return md5(
+        return \md5(
             $exception::class
             . $exception->getMessage()
             . $exception->getFile()
@@ -414,7 +412,7 @@ final class ErrorHandler
     private function exceptionToArray(Throwable $exception): array
     {
         $data = [
-            'class' => get_class($exception),
+            'class' => \get_class($exception),
             'message' => $exception->getMessage(),
             'code'    => $exception->getCode(),
             'file'    => $exception->getFile(),

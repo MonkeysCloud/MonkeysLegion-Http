@@ -30,28 +30,27 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
             $current = $current->getPrevious();
         }
 
-        $exceptionId = $_GET['exception_index'] ?? 0;
-        $exceptionId = (int) $exceptionId;
+        $exceptionId = \filter_var($_GET['exception_index'] ?? 0, \FILTER_VALIDATE_INT) ?: 0;
         if (!isset($exceptions[$exceptionId])) {
             $exceptionId = 0;
         }
 
         $activeException = $exceptions[$exceptionId];
-        $errorType = get_class($activeException);
-        $message = htmlspecialchars($activeException->getMessage(), ENT_QUOTES, 'UTF-8');
-        $file = htmlspecialchars($activeException->getFile(), ENT_QUOTES, 'UTF-8');
+        $errorType = \get_class($activeException);
+        $message = \htmlspecialchars($activeException->getMessage(), \ENT_QUOTES, 'UTF-8');
+        $file = \htmlspecialchars($activeException->getFile(), \ENT_QUOTES, 'UTF-8');
         $line = $activeException->getLine();
         $trace = $debug ? $this->formatStackTrace($activeException) : '';
         $context = $debug ? $this->getFileContext($activeException->getFile(), $activeException->getLine()) : '';
 
         $chainHtml = '';
-        if ($debug && count($exceptions) > 1) {
+        if ($debug && \count($exceptions) > 1) {
             $chainHtml = '<div class="exception-chain"><div class="chain-label">Exception Chain:</div><div class="chain-items">';
             foreach ($exceptions as $index => $exc) {
                 $isActive = $index === $exceptionId ? 'active' : '';
-                $shortName = (new \ReflectionClass($exc))->getShortName();
+                $shortName = new \ReflectionClass($exc)->getShortName();
                 $chainHtml .= "<button class=\"chain-item {$isActive}\" onclick=\"switchException({$index})\">";
-                $chainHtml .= "<span class=\"chain-index\">#" . (count($exceptions) - $index) . "</span>";
+                $chainHtml .= '<span class="chain-index">#' . (\count($exceptions) - $index) . '</span>';
                 $chainHtml .= "<span class=\"chain-type\">{$shortName}</span></button>";
             }
             $chainHtml .= '</div></div>';
@@ -69,13 +68,13 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
                    <div class=\"section-title\">Stack Trace</div>
                    <div class=\"stack-trace\" id=\"stackTrace\">{$trace}</div>
                </div>"
-            : "<div class=\"error-details\"><div class=\"error-location\">
+            : '<div class="error-details"><div class="error-location">
                    An internal server error occurred. Please try again later or contact support if the problem persists.
-               </div></div>";
+               </div></div>';
 
-        ob_start();
+        \ob_start();
         require __DIR__ . '/../css/error.php';
-        $css = ob_get_clean();
+        $css = \ob_get_clean();
 
         $scripts = $debug
             ? "<script>
@@ -136,13 +135,13 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
             $function = $frame['function'] ?? '';
             $class = $frame['class'] ?? '';
             $type = $frame['type'] ?? '';
-            $location = htmlspecialchars($file, ENT_QUOTES, 'UTF-8') . ':' . $line;
-            $call = htmlspecialchars($class . $type . $function, ENT_QUOTES, 'UTF-8');
+            $location = \htmlspecialchars($file, \ENT_QUOTES, 'UTF-8') . ':' . $line;
+            $call = \htmlspecialchars($class . $type . $function, \ENT_QUOTES, 'UTF-8');
 
-            $trace .= "<div class=\"stack-item\">";
+            $trace .= '<div class="stack-item">';
             $trace .= "<div class=\"stack-number\">#{$index}</div>";
             $trace .= "<div class=\"stack-info\"><div class=\"stack-function\">{$call}()</div><div class=\"stack-file\">{$location}</div></div>";
-            $trace .= "</div>";
+            $trace .= '</div>';
         }
 
         return $trace;
@@ -150,22 +149,22 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
 
     private function getFileContext(string $file, int $errorLine): string
     {
-        if (!is_file($file) || !is_readable($file)) {
+        if (!\is_file($file) || !\is_readable($file)) {
             return '';
         }
 
-        $lines = file($file, FILE_IGNORE_NEW_LINES);
+        $lines = \file($file, \FILE_IGNORE_NEW_LINES);
         if ($lines === false) {
             return '';
         }
 
-        $start = max(0, $errorLine - 6);
-        $end = min(count($lines), $errorLine + 5);
+        $start = \max(0, $errorLine - 6);
+        $end = \min(\count($lines), $errorLine + 5);
 
         $context = '<div class="section"><div class="section-title">Code Context</div><div class="code-context">';
         for ($i = $start; $i < $end; $i++) {
             $lineNumber = $i + 1;
-            $codeLine = htmlspecialchars($lines[$i], ENT_QUOTES, 'UTF-8');
+            $codeLine = \htmlspecialchars($lines[$i], \ENT_QUOTES, 'UTF-8');
             $isErrorLine = $lineNumber === $errorLine;
             $class = $isErrorLine ? 'code-line highlight' : 'code-line';
             $context .= "<div class=\"{$class}\"><span class=\"line-number\">{$lineNumber}</span><span class=\"line-content\">{$codeLine}</span></div>";

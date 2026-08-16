@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Message;
@@ -110,9 +111,9 @@ class Response implements ResponseInterface
         string $reasonPhrase = '',
     ) {
         foreach ($headers as $name => $values) {
-            $lc = strtolower($name);
+            $lc = \strtolower($name);
             $this->headerNames[$lc] = $name;
-            $this->headers[$lc]     = is_array($values) ? array_values($values) : [$values];
+            $this->headers[$lc]     = self::normalizeHeaderValues($values);
         }
 
         $this->reasonPhrase = $reasonPhrase !== ''
@@ -134,9 +135,9 @@ class Response implements ResponseInterface
     public static function json(
         mixed $data,
         int $status = 200,
-        int $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+        int $flags = \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES,
     ): self {
-        $json = json_encode($data, $flags | JSON_THROW_ON_ERROR);
+        $json = \json_encode($data, $flags | \JSON_THROW_ON_ERROR);
         return new self(
             Stream::createFromString($json),
             $status,
@@ -198,19 +199,19 @@ class Response implements ResponseInterface
      */
     public static function download(string $path, ?string $filename = null): self
     {
-        $realPath = realpath($path);
-        if ($realPath === false || !is_file($realPath) || !is_readable($realPath)) {
+        $realPath = \realpath($path);
+        if ($realPath === false || !\is_file($realPath) || !\is_readable($realPath)) {
             throw new \InvalidArgumentException(
-                sprintf('File path "%s" is not a valid readable file.', $path),
+                \sprintf('File path "%s" is not a valid readable file.', $path),
             );
         }
 
-        $filename ??= basename($realPath);
+        $filename ??= \basename($realPath);
         // Sanitize filename: whitelist safe characters, limit length
-        $filename = preg_replace('/[^a-zA-Z0-9._\-]/', '_', $filename);
-        $filename = ltrim($filename, '.');
-        if (strlen($filename) > 255) {
-            $filename = substr($filename, 0, 255);
+        $filename = \strval(\preg_replace('/[^a-zA-Z0-9._\-]/', '_', $filename));
+        $filename = \ltrim($filename, '.');
+        if (\strlen($filename) > 255) {
+            $filename = \substr($filename, 0, 255);
         }
         if ($filename === '') {
             $filename = 'download';
@@ -221,7 +222,7 @@ class Response implements ResponseInterface
             200,
             [
                 'Content-Type'        => 'application/octet-stream',
-                'Content-Disposition' => sprintf('attachment; filename="%s"', $filename),
+                'Content-Disposition' => \sprintf('attachment; filename="%s"', $filename),
             ],
         );
     }
@@ -281,28 +282,28 @@ class Response implements ResponseInterface
     /** {@inheritDoc} */
     public function hasHeader($name): bool
     {
-        return isset($this->headers[strtolower($name)]);
+        return isset($this->headers[\strtolower($name)]);
     }
 
     /** {@inheritDoc} */
     public function getHeader($name): array
     {
-        return $this->headers[strtolower($name)] ?? [];
+        return $this->headers[\strtolower($name)] ?? [];
     }
 
     /** {@inheritDoc} */
     public function getHeaderLine($name): string
     {
-        return implode(', ', $this->getHeader($name));
+        return \implode(', ', $this->getHeader($name));
     }
 
     /** {@inheritDoc} */
     public function withHeader($name, $value): static
     {
         $new = clone $this;
-        $lc  = strtolower($name);
+        $lc  = \strtolower($name);
         $new->headerNames[$lc] = $name;
-        $new->headers[$lc]     = is_array($value) ? array_values($value) : [$value];
+        $new->headers[$lc]     = self::normalizeHeaderValues($value);
         return $new;
     }
 
@@ -310,11 +311,10 @@ class Response implements ResponseInterface
     public function withAddedHeader($name, $value): static
     {
         $new = clone $this;
-        $lc  = strtolower($name);
-        $new->headerNames[$lc] = $new->headerNames[$lc] ?? $name;
+        $lc  = \strtolower($name);
+        $new->headerNames[$lc] ??= $name;
         $existing = $new->headers[$lc] ?? [];
-        $toAdd    = is_array($value) ? $value : [$value];
-        $new->headers[$lc] = array_merge($existing, $toAdd);
+        $new->headers[$lc] = \array_merge($existing, self::normalizeHeaderValues($value));
         return $new;
     }
 
@@ -322,7 +322,7 @@ class Response implements ResponseInterface
     public function withoutHeader($name): static
     {
         $new = clone $this;
-        $lc  = strtolower($name);
+        $lc  = \strtolower($name);
         unset($new->headers[$lc], $new->headerNames[$lc]);
         return $new;
     }
@@ -339,5 +339,26 @@ class Response implements ResponseInterface
         $new = clone $this;
         $new->body = $body;
         return $new;
+    }
+
+    // ── Internal ───────────────────────────────────────────────
+
+    /**
+     * Normalize header values to a list of strings.
+     *
+     * @return list<string>
+     */
+    private static function normalizeHeaderValues(mixed $values): array
+    {
+        $list = \is_array($values) ? \array_values($values) : [$values];
+        return \array_map(self::stringify(...), $list);
+    }
+
+    /**
+     * Safely convert a mixed value (e.g. a PSR-7 header value) to a string.
+     */
+    private static function stringify(mixed $value): string
+    {
+        return \is_scalar($value) ? (string) $value : '';
     }
 }

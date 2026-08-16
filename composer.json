@@ -1,28 +1,54 @@
 {
   "name": "monkeyscloud/monkeyslegion-http",
-  "description": "High-performance PSR-7/PSR-15 HTTP message implementations, middleware, and SAPI emitter for the MonkeysLegion framework.",
+  "description": "High-performance PSR-7/PSR-15/PSR-17 HTTP message implementations, middleware stack, and SAPI emitter for the MonkeysLegion framework.",
   "type": "library",
   "license": "MIT",
+  "readme": "README.md",
+  "keywords": [
+    "psr-7",
+    "psr-15",
+    "psr-17",
+    "http",
+    "middleware",
+    "psr-7-implementation",
+    "psr-15-implementation",
+    "router",
+    "framework",
+    "cors",
+    "csrf",
+    "rate-limit",
+    "php8.4"
+  ],
+  "homepage": "https://github.com/monkeyscloud/monkeyslegion-http",
+  "support": {
+    "issues": "https://github.com/monkeyscloud/monkeyslegion-http/issues",
+    "source": "https://github.com/monkeyscloud/monkeyslegion-http"
+  },
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/monkeyscloud"
+    }
+  ],
   "require": {
     "php": "^8.4",
     "psr/http-message": "^2.0",
     "psr/http-server-middleware": "^1.0",
     "psr/http-server-handler": "^1.0",
-    "guzzlehttp/psr7": "^2.7",
-    "http-interop/http-factory-guzzle": "^1.2",
+    "psr/http-factory": "^1.1",
     "psr/simple-cache": "^3.0",
-    "monkeyscloud/monkeyslegion-logger": "^2.0",
-    "monkeyscloud/monkeyslegion-template": "^2.0",
-    "monkeyscloud/monkeyslegion-session": "^2.0",
-    "monkeyscloud/monkeyslegion-core": "^2.0",
-    "psr/http-factory": "^1.1"
+    "monkeyscloud/monkeyslegion-core": "^2.0"
   },
   "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.0",
+    "infection/infection": "^0.34",
+    "phpstan/phpstan": "^2.0",
     "phpunit/phpunit": "^11.0",
+    "predis/predis": "^2.0",
     "psr/log": "^3.0"
   },
   "suggest": {
-    "psr/log": "^3.0 — Required for ErrorHandler PSR-3 logging"
+    "psr/log": "^3.0 — Required for ErrorHandler and LoggingMiddleware PSR-3 logging"
   },
   "autoload": {
     "psr-4": {
@@ -37,9 +63,35 @@
       "MonkeysLegion\\Http\\Tests\\": "tests/"
     }
   },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true,
+    "allow-plugins": false
+  },
   "extra": {
     "branch-alias": {
-      "dev-2.x-dev": "2.0.x-dev"
+      "dev-main": "2.0.x-dev"
     }
+  },
+  "scripts": {
+    "test": "phpunit --colors=always --no-coverage",
+    "test:coverage": "XDEBUG_MODE=coverage phpunit --colors=always --coverage-html .build/coverage --coverage-text",
+    "test:integration": "RUN_INTEGRATION_TESTS=1 phpunit --colors=always --no-coverage --testsuite Feature",
+    "test:integration:docker": "docker compose -f docker-compose.integration.yml up -d --wait && RUN_INTEGRATION_TESTS=1 phpunit --colors=always --no-coverage --testsuite Feature",
+    "phpstan": "phpstan analyse --ansi",
+    "infection": "XDEBUG_MODE=coverage php -d zend.assertions=1 vendor/bin/infection --threads=4 --no-progress",
+    "cs-fix": "php-cs-fixer fix --config=.php-cs-fixer.php --ansi",
+    "cs-check": "php-cs-fixer fix --config=.php-cs-fixer.php --dry-run --ansi",
+    "check": [
+      "@cs-check",
+      "@phpstan",
+      "@test"
+    ],
+    "quality-report": [
+      "@cs-check",
+      "@phpstan",
+      "@test",
+      "@infection"
+    ]
   }
 }

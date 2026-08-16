@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -29,7 +30,8 @@ final class ETagMiddleware implements MiddlewareInterface
      */
     public function __construct(
         private readonly bool $weakETag = true,
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -39,7 +41,7 @@ final class ETagMiddleware implements MiddlewareInterface
 
         // Only generate ETags for successful GET/HEAD responses
         $method = $request->getMethod();
-        if (!in_array($method, ['GET', 'HEAD'], true)) {
+        if (!\in_array($method, ['GET', 'HEAD'], true)) {
             return $response;
         }
 
@@ -55,22 +57,22 @@ final class ETagMiddleware implements MiddlewareInterface
 
         // Generate ETag from body content using stream-based hashing
         $body = $response->getBody();
-        $hashCtx = hash_init('xxh3');
+        $hashCtx = \hash_init('xxh3');
 
         if ($body->isSeekable()) {
             $body->rewind();
         }
 
         while (!$body->eof()) {
-            hash_update($hashCtx, $body->read(8192));
+            \hash_update($hashCtx, $body->read(8192));
         }
 
         if ($body->isSeekable()) {
             $body->rewind();
         }
 
-        $hash = hash_final($hashCtx);
-        $etag = $this->weakETag ? sprintf('W/"%s"', $hash) : sprintf('"%s"', $hash);
+        $hash = \hash_final($hashCtx);
+        $etag = $this->weakETag ? \sprintf('W/"%s"', $hash) : \sprintf('"%s"', $hash);
 
         $response = $response->withHeader('ETag', $etag);
 
@@ -88,14 +90,14 @@ final class ETagMiddleware implements MiddlewareInterface
     private function matches(string $etag, string $ifNoneMatch): bool
     {
         // Strip whitespace and compare
-        $candidates = array_map('trim', explode(',', $ifNoneMatch));
+        $candidates = \array_map('trim', \explode(',', $ifNoneMatch));
         foreach ($candidates as $candidate) {
             if ($candidate === $etag || $candidate === '*') {
                 return true;
             }
             // Compare without weak prefix
-            $cleanCandidate = preg_replace('/^W\//', '', $candidate);
-            $cleanEtag      = preg_replace('/^W\//', '', $etag);
+            $cleanCandidate = \preg_replace('/^W\//', '', $candidate);
+            $cleanEtag      = \preg_replace('/^W\//', '', $etag);
             if ($cleanCandidate === $cleanEtag) {
                 return true;
             }

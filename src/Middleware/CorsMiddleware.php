@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -14,7 +15,8 @@ use Psr\Http\Server\RequestHandlerInterface;
  * CORS middleware with full preflight support.
  *
  * Features:
- *  • Configurable allowed origins (array, '*', or '*' with reflection)
+ *  • Wildcard support: '*' anywhere in the allow-list allows every origin
+ *  • Subdomain wildcards: 'https://*.example.com' matches any subdomain
  *  • Preflight OPTIONS handling with Access-Control-Max-Age
  *  • Supports credentials, exposed headers, allowed methods
  *  • Origin reflection: echoes requesting origin when it matches the allow-list
@@ -25,7 +27,9 @@ use Psr\Http\Server\RequestHandlerInterface;
 final class CorsMiddleware implements MiddlewareInterface
 {
     /**
-     * @param list<string>  $allowedOrigins   Allowed origin URLs or ['*'].
+     * @param list<string>  $allowedOrigins   Allowed origin URLs; '*' (anywhere in the list)
+     *                                        allows every origin, and patterns such as
+     *                                        'https://*.example.com' match subdomains.
      * @param list<string>  $allowedMethods   HTTP methods to accept.
      * @param list<string>  $allowedHeaders   Request headers to accept.
      * @param list<string>  $exposedHeaders   Response headers the browser may read.
@@ -39,7 +43,8 @@ final class CorsMiddleware implements MiddlewareInterface
         private readonly array $exposedHeaders   = [],
         private readonly bool  $allowCredentials = false,
         private readonly int   $maxAge           = 86400,
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -71,11 +76,35 @@ final class CorsMiddleware implements MiddlewareInterface
 
     private function isOriginAllowed(string $origin): bool
     {
-        if ($this->allowedOrigins === ['*']) {
+        // Literal '*' anywhere in the list allows every origin.
+        if (\in_array('*', $this->allowedOrigins, true)) {
             return true;
         }
 
-        return in_array($origin, $this->allowedOrigins, true);
+        // Exact origin match.
+        if (\in_array($origin, $this->allowedOrigins, true)) {
+            return true;
+        }
+
+        // Pattern match, e.g. 'https://*.example.com'.
+        foreach ($this->allowedOrigins as $allowed) {
+            if (\str_contains($allowed, '*') && $this->originMatchesPattern($origin, $allowed)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Match an origin against a wildcard pattern (e.g. 'https://*.example.com').
+     * The '*' cannot span the '//' scheme separator.
+     */
+    private function originMatchesPattern(string $origin, string $pattern): bool
+    {
+        // '~' delimiter so '/' inside the character class does not need escaping.
+        $regex = '~^' . \str_replace('\*', '[^/]+', \preg_quote($pattern, '~')) . '$~i';
+        return \preg_match($regex, $origin) === 1;
     }
 
     private function preflight(string $origin): ResponseInterface
@@ -88,15 +117,17 @@ final class CorsMiddleware implements MiddlewareInterface
         $response = $this->addCorsHeaders($response, $origin);
 
         return $response
-            ->withHeader('Access-Control-Allow-Methods', implode(', ', $this->allowedMethods))
-            ->withHeader('Access-Control-Allow-Headers', implode(', ', $this->allowedHeaders))
+            ->withHeader('Access-Control-Allow-Methods', \implode(', ', $this->allowedMethods))
+            ->withHeader('Access-Control-Allow-Headers', \implode(', ', $this->allowedHeaders))
             ->withHeader('Access-Control-Max-Age', (string) $this->maxAge);
     }
 
     private function addCorsHeaders(ResponseInterface $response, string $origin): ResponseInterface
     {
-        // Use origin reflection (echo specific origin) unless wildcard with no credentials
-        $originValue = ($this->allowedOrigins === ['*'] && !$this->allowCredentials) ? '*' : $origin;
+        // Use '*' only for a wildcard allow-list without credentials; browsers reject
+        // 'Access-Control-Allow-Origin: *' when 'Allow-Credentials' is set, so the
+        // specific origin is reflected in that case.
+        $originValue = (\in_array('*', $this->allowedOrigins, true) && !$this->allowCredentials) ? '*' : $origin;
 
         $response = $response
             ->withHeader('Access-Control-Allow-Origin', $originValue)
@@ -107,7 +138,7 @@ final class CorsMiddleware implements MiddlewareInterface
         }
 
         if ($this->exposedHeaders !== []) {
-            $response = $response->withHeader('Access-Control-Expose-Headers', implode(', ', $this->exposedHeaders));
+            $response = $response->withHeader('Access-Control-Expose-Headers', \implode(', ', $this->exposedHeaders));
         }
 
         return $response;

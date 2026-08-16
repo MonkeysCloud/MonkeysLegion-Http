@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace MonkeysLegion\Http\Middleware;
@@ -38,7 +39,8 @@ final class TrustedProxyMiddleware implements MiddlewareInterface
     public function __construct(
         private readonly array  $trustedProxies = ['127.0.0.1', '::1'],
         private readonly string $attributeName  = 'client_ip',
-    ) {}
+    ) {
+    }
 
     public function process(
         ServerRequestInterface $request,
@@ -56,23 +58,25 @@ final class TrustedProxyMiddleware implements MiddlewareInterface
                 }
 
                 // Handle Forwarded: for=1.2.3.4 (RFC 7239)
-                if (strcasecmp($header, 'Forwarded') === 0) {
-                    if (preg_match('/for\s*=\s*"?([^";,\s]+)/i', $value, $m)) {
-                        $clientIp = trim($m[1], '"[]');
+                if (\strcasecmp($header, 'Forwarded') === 0) {
+                    if (\preg_match('/for\s*=\s*"?([^";,\s]+)/i', $value, $m)) {
+                        $clientIp = \trim($m[1], '"[]');
+                        // Strip an IPv6 port suffix: [2001:db8::1]:4711 → 2001:db8::1
+                        $clientIp = (string) \preg_replace('/\]?:\d+$/', '', $clientIp);
                         break;
                     }
                     continue;
                 }
 
                 // X-Forwarded-For: client, proxy1, proxy2 → take first
-                $ips = explode(',', $value);
-                $clientIp = trim($ips[0]);
+                $ips = \explode(',', $value);
+                $clientIp = \trim($ips[0]);
                 break;
             }
         }
 
         // Validate resolved IP
-        if (filter_var($clientIp, FILTER_VALIDATE_IP) === false) {
+        if (\filter_var($clientIp, \FILTER_VALIDATE_IP) === false) {
             $clientIp = $remoteAddr;
         }
 
@@ -86,7 +90,7 @@ final class TrustedProxyMiddleware implements MiddlewareInterface
     private function isTrusted(string $ip): bool
     {
         foreach ($this->trustedProxies as $trusted) {
-            if (str_contains($trusted, '/')) {
+            if (\str_contains($trusted, '/')) {
                 if ($this->ipInCidr($ip, $trusted)) {
                     return true;
                 }
@@ -102,17 +106,17 @@ final class TrustedProxyMiddleware implements MiddlewareInterface
      */
     private function ipInCidr(string $ip, string $cidr): bool
     {
-        [$subnet, $bits] = explode('/', $cidr, 2);
+        [$subnet, $bits] = \explode('/', $cidr, 2);
         $bits = (int) $bits;
 
-        $ipBin  = @inet_pton($ip);
-        $subBin = @inet_pton($subnet);
+        $ipBin  = @\inet_pton($ip);
+        $subBin = @\inet_pton($subnet);
 
-        if ($ipBin === false || $subBin === false || strlen($ipBin) !== strlen($subBin)) {
+        if ($ipBin === false || $subBin === false || \strlen($ipBin) !== \strlen($subBin)) {
             return false;
         }
 
-        $byteLen  = strlen($ipBin);
+        $byteLen  = \strlen($ipBin);
         $totalBits = $byteLen * 8;
 
         if ($bits < 0 || $bits > $totalBits) {
@@ -120,11 +124,11 @@ final class TrustedProxyMiddleware implements MiddlewareInterface
         }
 
         // Build mask using packed bytes
-        $mask = str_repeat("\xff", intdiv($bits, 8));
+        $mask = \str_repeat("\xff", \intdiv($bits, 8));
         if ($bits % 8 !== 0) {
-            $mask .= chr(0xff << (8 - ($bits % 8)) & 0xff);
+            $mask .= \chr(0xff << (8 - ($bits % 8)) & 0xff);
         }
-        $mask = str_pad($mask, $byteLen, "\x00");
+        $mask = \str_pad($mask, $byteLen, "\x00");
 
         return ($ipBin & $mask) === ($subBin & $mask);
     }
