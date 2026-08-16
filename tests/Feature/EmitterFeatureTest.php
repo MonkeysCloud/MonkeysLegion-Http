@@ -89,7 +89,7 @@ final class EmitterFeatureTest extends TestCase
                 \usleep(50_000);
             }
             $status = \proc_get_status($this->server);
-            if ($status['running']) {
+            if ($status['running'] && \function_exists('posix_kill')) {
                 \posix_kill($status['pid'], \SIGKILL);
             }
             \proc_close($this->server);

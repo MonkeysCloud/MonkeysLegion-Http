@@ -26,11 +26,18 @@ use Psr\Http\Server\RequestHandlerInterface;
 final class RateLimitRedisFeatureTest extends TestCase
 {
     private Client $redis;
+    private bool $connected = false;
 
     protected function setUp(): void
     {
-        $host = \getenv('INTEGRATION_REDIS_HOST');
-        $port = \getenv('INTEGRATION_REDIS_PORT');
+        if (\getenv('RUN_INTEGRATION_TESTS') !== '1') {
+            $this->markTestSkipped('Set RUN_INTEGRATION_TESTS=1 to run Redis integration tests.');
+        }
+
+        // CI (GitHub Actions service container) exposes Redis on REDIS_HOST/
+        // REDIS_PORT (port 6379); the local docker-compose maps host port 6380.
+        $host = \getenv('REDIS_HOST') ?: \getenv('INTEGRATION_REDIS_HOST');
+        $port = \getenv('REDIS_PORT') ?: \getenv('INTEGRATION_REDIS_PORT');
 
         $this->redis = new Client([
             'host' => \is_string($host) && $host !== '' ? $host : '127.0.0.1',
@@ -40,6 +47,7 @@ final class RateLimitRedisFeatureTest extends TestCase
 
         try {
             $this->redis->ping();
+            $this->connected = true;
         } catch (\Throwable $e) {
             $this->markTestSkipped(
                 'Redis is not reachable. Start it with: docker compose -f docker-compose.integration.yml up -d redis',
@@ -51,7 +59,10 @@ final class RateLimitRedisFeatureTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (isset($this->redis)) {
+        // PHPUnit still runs tearDown() after a skipped setUp() — only touch
+        // Redis when the connection actually succeeded, or the skip becomes an
+        // error (which fails CI).
+        if ($this->connected) {
             $this->redis->flushdb();
         }
     }
