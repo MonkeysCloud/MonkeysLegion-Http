@@ -2,6 +2,7 @@
   "name": "monkeyscloud/monkeyslegion-http",
   "description": "High-performance PSR-7/PSR-15/PSR-17 HTTP message implementations, middleware stack, and SAPI emitter for the MonkeysLegion framework.",
   "type": "library",
+  "version": "2.2.1",
   "license": "MIT",
   "readme": "README.md",
   "keywords": [
@@ -70,7 +71,7 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-main": "2.0.x-dev"
+      "dev-main": "2.2.x-dev"
     }
   },
   "scripts": {
